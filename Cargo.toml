@@ -1,0 +1,49 @@
+[package]
+name = "assume-zero"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Test what your project assumes about the machine it runs on."
+license = "MIT"
+repository = "https://github.com/y4ho0/assume-zero"
+readme = "README.md"
+keywords = ["testing", "reproducibility", "environment", "cli"]
+categories = ["command-line-utilities", "development-tools::testing"]
+
+[[bin]]
+name = "assumezero"
+path = "src/main.rs"
+
+[[bin]]
+name = "assumezero-test-fixture"
+path = "tests/helpers/fixture.rs"
+required-features = ["test-fixtures"]
+
+[features]
+default = []
+test-fixtures = []
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "=4.5.23", features = ["derive"] }
+ctrlc = "3.4"
+regex = "1.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tempfile = "=3.12.0"
+toml = "0.8"
+ulid = { version = "1.1", features = ["serde"] }
+wait-timeout = "0.2"
+walkdir = "2.5"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

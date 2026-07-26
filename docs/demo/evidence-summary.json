@@ -1,0 +1,55 @@
+{
+  "date": "2026-07-27",
+  "platform": {
+    "os": "macos",
+    "arch": "aarch64"
+  },
+  "demonstrations": [
+    {
+      "scenario": "AZ-S003",
+      "baseline": "STABLE",
+      "scenario_runs": 2,
+      "evidence": "PROVEN",
+      "restored_names": ["ASSUMEZERO_DEMO_TOKEN"],
+      "minimization_complete": true,
+      "source_unchanged": true,
+      "persisted_fixture_secret_found": false,
+      "exit_code": 1
+    },
+    {
+      "scenario": "AZ-S004",
+      "baseline": "STABLE",
+      "scenario_runs": 2,
+      "evidence": "PROVEN",
+      "restored_names": ["<DEMO_BIN>"],
+      "minimization_complete": true,
+      "source_unchanged": true,
+      "exit_code": 1
+    },
+    {
+      "scenario": "AZ-S001",
+      "baseline": "STABLE",
+      "scenario_runs": 2,
+      "evidence": "CONFIRMED",
+      "source_unchanged": true,
+      "exit_code": 1
+    },
+    {
+      "scenario": "AZ-S005",
+      "baseline": "STABLE",
+      "scenario_runs": 2,
+      "evidence": "CONFIRMED",
+      "source_unchanged": true,
+      "exit_code": 1
+    },
+    {
+      "scenario": null,
+      "baseline": "BASELINE_UNSTABLE",
+      "baseline_acceptance": [true, false],
+      "scenarios_executed": 0,
+      "source_unchanged": true,
+      "exit_code": 2
+    }
+  ]
+}
+

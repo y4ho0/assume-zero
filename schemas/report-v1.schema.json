@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/y4ho0/assume-zero/blob/main/schemas/report-v1.schema.json",
+  "title": "AssumeZero report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool_version",
+    "run_id",
+    "started_at",
+    "finished_at",
+    "platform",
+    "repository_fingerprint",
+    "configuration",
+    "command",
+    "baseline",
+    "baseline_status",
+    "scenarios",
+    "findings",
+    "budget",
+    "redaction_summary",
+    "workspace_integrity"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "tool_version": { "type": "string" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "started_at": { "type": "string", "pattern": "^[0-9]+$" },
+    "finished_at": { "type": "string", "pattern": "^[0-9]+$" },
+    "platform": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "required": ["os", "arch", "family"]
+    },
+    "repository_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "configuration": { "$ref": "#/$defs/configuration" },
+    "command": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "baseline": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/run" }
+    },
+    "baseline_status": {
+      "type": "string",
+      "enum": ["STABLE", "BASELINE_FAILED", "BASELINE_UNSTABLE"]
+    },
+    "scenarios": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/scenario" }
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "budget": { "$ref": "#/$defs/budget" },
+    "redaction_summary": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "workspace_integrity": { "$ref": "#/$defs/integrity" }
+  },
+  "$defs": {
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "profile",
+        "timeout_seconds",
+        "baseline_runs",
+        "confirm_failures",
+        "workspace_mode",
+        "report_formats"
+      ],
+      "properties": {
+        "source": { "type": "string" },
+        "profile": { "type": "string", "enum": ["quick", "deep"] },
+        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "baseline_runs": { "type": "integer", "minimum": 2 },
+        "confirm_failures": { "type": "integer", "minimum": 1 },
+        "workspace_mode": {
+          "type": "string",
+          "enum": ["working-tree", "git-clean"]
+        },
+        "report_formats": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "oracle_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check", "accepted", "detail"],
+      "properties": {
+        "check": { "type": "string" },
+        "accepted": { "type": "boolean" },
+        "detail": { "type": "string" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accepted",
+        "exit_code",
+        "duration_ms",
+        "timed_out",
+        "interrupted",
+        "output_truncated",
+        "stdout_summary",
+        "stderr_summary",
+        "oracle_checks"
+      ],
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "exit_code": { "type": ["integer", "null"] },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "timed_out": { "type": "boolean" },
+        "interrupted": { "type": "boolean" },
+        "output_truncated": { "type": "boolean" },
+        "stdout_summary": { "type": "string" },
+        "stderr_summary": { "type": "string" },
+        "oracle_checks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/oracle_check" }
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "description",
+        "status",
+        "best_effort",
+        "runs",
+        "restored_names",
+        "minimization_complete",
+        "note"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^AZ-S[0-9]{3}$" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "FAIL",
+            "SKIPPED_UNSUPPORTED",
+            "INCONCLUSIVE",
+            "INFRASTRUCTURE_ERROR"
+          ]
+        },
+        "best_effort": { "type": "boolean" },
+        "runs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/run" }
+        },
+        "restored_names": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "minimization_complete": { "type": "boolean" },
+        "note": { "type": "string" }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scenario_id",
+        "evidence",
+        "changed",
+        "observed",
+        "conclusion",
+        "next_step",
+        "not_proven",
+        "restored_names"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^AZ-F[0-9]{3}$" },
+        "scenario_id": { "type": "string", "pattern": "^AZ-S[0-9]{3}$" },
+        "evidence": {
+          "type": "string",
+          "enum": ["PROVEN", "CONFIRMED", "SUSPECTED", "INCONCLUSIVE", "SKIPPED"]
+        },
+        "changed": { "type": "string" },
+        "observed": { "type": "string" },
+        "conclusion": { "type": "string" },
+        "next_step": { "type": "string" },
+        "not_proven": { "type": "string" },
+        "restored_names": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_total_runs",
+        "max_total_seconds",
+        "runs_used",
+        "elapsed_seconds",
+        "exhausted"
+      ],
+      "properties": {
+        "max_total_runs": { "type": "integer", "minimum": 1 },
+        "max_total_seconds": { "type": "integer", "minimum": 1 },
+        "runs_used": { "type": "integer", "minimum": 0 },
+        "elapsed_seconds": { "type": "integer", "minimum": 0 },
+        "exhausted": { "type": "boolean" }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "before_fingerprint",
+        "after_fingerprint",
+        "source_unchanged",
+        "git_status_before",
+        "git_status_after",
+        "note"
+      ],
+      "properties": {
+        "before_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "after_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_unchanged": { "type": "boolean" },
+        "git_status_before": { "type": ["string", "null"] },
+        "git_status_after": { "type": ["string", "null"] },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}
+

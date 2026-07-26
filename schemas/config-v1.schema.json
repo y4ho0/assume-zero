@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/y4ho0/assume-zero/blob/main/schemas/config-v1.schema.json",
+  "title": "AssumeZero configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "prepare": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          },
+          "default": []
+        },
+        "timeout_seconds": { "type": "integer", "minimum": 1, "default": 300 },
+        "baseline_runs": { "type": "integer", "minimum": 2, "default": 2 },
+        "confirm_failures": { "type": "integer", "minimum": 1, "default": 2 },
+        "strict_output": { "type": "boolean", "default": false }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["working-tree", "git-clean"],
+          "default": "working-tree"
+        },
+        "max_size_mib": { "type": "integer", "minimum": 1, "default": 2048 },
+        "exclude": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [".git", ".assumezero"]
+        },
+        "include_untracked": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Explicit relative untracked paths to copy in git-clean mode."
+        },
+        "allow_external_symlinks": { "type": "boolean", "default": false },
+        "deep_path_length": { "type": "integer", "minimum": 32, "default": 180 }
+      }
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "exit-code" },
+        "accepted_exit_codes": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "minItems": 1,
+          "default": [0]
+        },
+        "stdout_contains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "stderr_not_contains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "stdout_regex": { "type": "string" },
+        "required_files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "forbidden_files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preserve": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "deny": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "preserve_path_entries": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      }
+    },
+    "scenarios": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "enum": ["quick", "deep"],
+          "default": "quick"
+        },
+        "include": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "pairwise": {
+          "type": "boolean",
+          "default": false,
+          "description": "Reserved in v1. v0.1.0 records but does not execute pairwise scenarios."
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_total_runs": { "type": "integer", "minimum": 2, "default": 40 },
+        "max_total_seconds": { "type": "integer", "minimum": 1, "default": 1800 }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["terminal", "json", "markdown", "junit"]
+          },
+          "default": ["terminal", "json"]
+        },
+        "redact_home": { "type": "boolean", "default": true },
+        "log_limit_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "default": 131072
+        }
+      }
+    }
+  }
+}

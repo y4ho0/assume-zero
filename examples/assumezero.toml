@@ -1,0 +1,36 @@
+version = 1
+
+[run]
+command = ["cargo", "test"]
+prepare = []
+timeout_seconds = 300
+baseline_runs = 2
+confirm_failures = 2
+
+[workspace]
+mode = "working-tree"
+max_size_mib = 2048
+exclude = [".git", ".assumezero"]
+include_untracked = []
+
+[oracle]
+kind = "exit-code"
+accepted_exit_codes = [0]
+stderr_not_contains = ["panic"]
+
+[environment]
+preserve = ["CI"]
+deny = []
+
+[scenarios]
+profile = "quick"
+include = []
+exclude = []
+
+[budget]
+max_total_runs = 40
+max_total_seconds = 1800
+
+[report]
+formats = ["terminal", "json", "markdown", "junit"]
+redact_home = true
