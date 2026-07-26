@@ -153,7 +153,13 @@ fn clean_env_is_minimized_without_persisting_the_value() {
             "required-env",
             "AZ_REQUIRED_DEMO_TOKEN",
         ]));
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     let report = parse_json(&output);
     assert_eq!(report["baseline_status"], "STABLE");
     assert_eq!(report["scenarios"][0]["status"], "FAIL");
@@ -238,7 +244,13 @@ fn minimal_path_finds_hidden_child_tool_directory() {
             "hidden-path-tool",
             "az-hidden-child",
         ]));
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     let report = parse_json(&output);
     assert_eq!(report["findings"][0]["scenario_id"], "AZ-S004");
     assert_eq!(report["findings"][0]["evidence"], "PROVEN");

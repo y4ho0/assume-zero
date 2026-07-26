@@ -11,6 +11,54 @@ pub fn facts() -> BTreeMap<String, String> {
     ])
 }
 
+pub fn environment_name_eq(left: &str, right: &str) -> bool {
+    #[cfg(windows)]
+    {
+        left.eq_ignore_ascii_case(right)
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+pub fn environment_value<'a>(
+    environment: &'a BTreeMap<String, String>,
+    name: &str,
+) -> Option<&'a String> {
+    environment
+        .iter()
+        .find(|(candidate, _)| environment_name_eq(candidate, name))
+        .map(|(_, value)| value)
+}
+
+pub fn contains_environment_name(environment: &BTreeMap<String, String>, name: &str) -> bool {
+    environment
+        .keys()
+        .any(|candidate| environment_name_eq(candidate, name))
+}
+
+pub fn set_environment_value(
+    environment: &mut BTreeMap<String, String>,
+    name: &str,
+    value: String,
+) {
+    let existing = environment
+        .keys()
+        .find(|candidate| environment_name_eq(candidate, name))
+        .cloned();
+    if let Some(existing) = existing {
+        environment.remove(&existing);
+    }
+    environment.insert(name.into(), value);
+}
+
+pub fn name_in_list(names: &[String], candidate: &str) -> bool {
+    names
+        .iter()
+        .any(|name| environment_name_eq(name, candidate))
+}
+
 pub fn necessary_environment() -> BTreeSet<String> {
     #[cfg(windows)]
     {
@@ -207,5 +255,26 @@ mod tests {
     fn windows_style_path_can_be_tested_without_host_separator() {
         let parts: Vec<_> = "C:\\one;D:\\two".split(';').collect();
         assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn environment_name_comparison_matches_platform_rules() {
+        assert!(environment_name_eq("PATH", "PATH"));
+        #[cfg(windows)]
+        assert!(environment_name_eq("Path", "PATH"));
+        #[cfg(not(windows))]
+        assert!(!environment_name_eq("Path", "PATH"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn setting_windows_environment_replaces_differently_cased_key() {
+        let mut environment = BTreeMap::from([("Path".into(), "original".into())]);
+        set_environment_value(&mut environment, "PATH", "minimal".into());
+        assert_eq!(environment.len(), 1);
+        assert_eq!(
+            environment_value(&environment, "Path").map(String::as_str),
+            Some("minimal")
+        );
     }
 }

@@ -221,24 +221,25 @@ fn resolve_command(
         .split_first()
         .context("no tested command was provided; use `assumezero check -- <command> [args...]`")?;
     let requested = Path::new(program);
-    let (executable, workspace_relative) =
-        if requested.is_absolute() || requested.components().count() > 1 {
-            let candidate = if requested.is_absolute() {
-                requested.to_path_buf()
-            } else {
-                source.join(requested)
-            };
-            if !candidate.is_file() {
-                bail!("tested command `{program}` does not resolve to a file");
-            }
-            let relative = candidate.strip_prefix(source).ok().map(Path::to_path_buf);
-            (candidate, relative)
+    let (executable, workspace_relative) = if requested.is_absolute()
+        || requested.components().count() > 1
+    {
+        let candidate = if requested.is_absolute() {
+            requested.to_path_buf()
         } else {
-            let path = environment.get("PATH").map(std::ffi::OsString::from);
-            let resolved = platform::resolve_program(program, path.as_ref())
-                .with_context(|| format!("tested command `{program}` was not found on PATH"))?;
-            (resolved, None)
+            source.join(requested)
         };
+        if !candidate.is_file() {
+            bail!("tested command `{program}` does not resolve to a file");
+        }
+        let relative = candidate.strip_prefix(source).ok().map(Path::to_path_buf);
+        (candidate, relative)
+    } else {
+        let path = platform::environment_value(environment, "PATH").map(std::ffi::OsString::from);
+        let resolved = platform::resolve_program(program, path.as_ref())
+            .with_context(|| format!("tested command `{program}` was not found on PATH"))?;
+        (resolved, None)
+    };
     Ok(ResolvedCommand {
         display: tokens.to_vec(),
         executable,
@@ -434,12 +435,11 @@ fn minimize_environment(
     context: &mut Context<'_>,
 ) -> Result<(Vec<String>, bool, EvidenceLevel, String)> {
     let clean = scenarios::clean_environment(context.original_environment, context.config);
-    let base_names: BTreeSet<_> = clean.values.keys().cloned().collect();
     let mut candidates: Vec<String> = context
         .original_environment
         .keys()
-        .filter(|name| !base_names.contains(*name))
-        .filter(|name| !context.config.environment.deny.contains(*name))
+        .filter(|name| !platform::contains_environment_name(&clean.values, name))
+        .filter(|name| !platform::name_in_list(&context.config.environment.deny, name))
         .cloned()
         .collect();
     candidates.sort();
@@ -495,9 +495,7 @@ fn minimize_environment(
 }
 
 fn minimize_path(context: &mut Context<'_>) -> Result<(Vec<String>, bool, EvidenceLevel, String)> {
-    let original_path = context
-        .original_environment
-        .get("PATH")
+    let original_path = platform::environment_value(context.original_environment, "PATH")
         .map(std::ffi::OsString::from)
         .unwrap_or_default();
     let all = platform::deduplicate_paths(platform::split_path(&original_path));
@@ -610,7 +608,7 @@ fn run_once(
                 scenarios::clean_environment(context.original_environment, context.config);
             for name in names {
                 if let Some(value) = context.original_environment.get(&name) {
-                    clean.values.insert(name, value.clone());
+                    platform::set_environment_value(&mut clean.values, &name, value.clone());
                 }
             }
             clean
@@ -625,9 +623,11 @@ fn run_once(
             );
             let value = platform::join_path(&joined)
                 .context("PATH entries could not be represented on this platform")?;
-            baseline
-                .values
-                .insert("PATH".into(), value.to_string_lossy().into_owned());
+            platform::set_environment_value(
+                &mut baseline.values,
+                "PATH",
+                value.to_string_lossy().into_owned(),
+            );
             baseline
         }
     };

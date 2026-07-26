@@ -145,11 +145,10 @@ pub fn baseline_environment(
     original: &BTreeMap<String, String>,
     config: &Config,
 ) -> EnvironmentPlan {
-    let denied: BTreeSet<_> = config.environment.deny.iter().collect();
     EnvironmentPlan {
         values: original
             .iter()
-            .filter(|(name, _)| !denied.contains(name))
+            .filter(|(name, _)| !platform::name_in_list(&config.environment.deny, name))
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect(),
         clear: true,
@@ -159,11 +158,14 @@ pub fn baseline_environment(
 pub fn clean_environment(original: &BTreeMap<String, String>, config: &Config) -> EnvironmentPlan {
     let mut keep = platform::necessary_environment();
     keep.extend(config.environment.preserve.iter().cloned());
-    let denied: BTreeSet<_> = config.environment.deny.iter().collect();
     EnvironmentPlan {
         values: original
             .iter()
-            .filter(|(name, _)| keep.contains(*name) && !denied.contains(name))
+            .filter(|(name, _)| {
+                keep.iter()
+                    .any(|kept| platform::environment_name_eq(kept, name))
+                    && !platform::name_in_list(&config.environment.deny, name)
+            })
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect(),
         clear: true,
@@ -200,7 +202,7 @@ pub fn apply(
             let empty = scenario_root.join("empty-home");
             let value = empty.to_string_lossy().into_owned();
             for name in applicable_home_variables() {
-                plan.values.insert((*name).into(), value.clone());
+                platform::set_environment_value(&mut plan.values, name, value.clone());
             }
         }
         ScenarioKind::EmptyCache => {
@@ -211,8 +213,9 @@ pub fn apply(
                 ("UV_CACHE_DIR", "uv"),
                 ("GRADLE_USER_HOME", "gradle"),
             ] {
-                plan.values.insert(
-                    name.into(),
+                platform::set_environment_value(
+                    &mut plan.values,
+                    name,
                     scenario_root
                         .join("empty-cache")
                         .join(directory)
@@ -224,8 +227,9 @@ pub fn apply(
         ScenarioKind::CleanEnv => return Some(clean_environment(original, config)),
         ScenarioKind::MinimalPath => {
             let paths = minimal_path(config, top_program_directory);
-            plan.values.insert(
-                "PATH".into(),
+            platform::set_environment_value(
+                &mut plan.values,
+                "PATH",
                 platform::join_path(&paths)?.to_string_lossy().into_owned(),
             );
         }
@@ -235,21 +239,21 @@ pub fn apply(
                 .to_string_lossy()
                 .into_owned();
             for name in ["TMP", "TEMP", "TMPDIR"] {
-                plan.values.insert(name.into(), value.clone());
+                platform::set_environment_value(&mut plan.values, name, value.clone());
             }
         }
         ScenarioKind::TimezoneUtc => {
             #[cfg(windows)]
             return None;
             #[cfg(not(windows))]
-            plan.values.insert("TZ".into(), "UTC".into());
+            platform::set_environment_value(&mut plan.values, "TZ", "UTC".into());
         }
         ScenarioKind::LocaleC => {
             if !locale_c_supported() {
                 return None;
             }
-            plan.values.insert("LC_ALL".into(), "C".into());
-            plan.values.insert("LANG".into(), "C".into());
+            platform::set_environment_value(&mut plan.values, "LC_ALL", "C".into());
+            platform::set_environment_value(&mut plan.values, "LANG", "C".into());
         }
         ScenarioKind::SpaceWorkdir | ScenarioKind::UnicodeWorkdir | ScenarioKind::DeepWorkdir => {}
     }
