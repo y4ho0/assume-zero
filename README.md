@@ -1,5 +1,7 @@
 # AssumeZero
 
+[![CI](https://github.com/y4ho0/assume-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/y4ho0/assume-zero/actions/workflows/ci.yml)
+
 > Test what your project assumes about the machine it runs on.
 
 AssumeZero treats the development environment as a finite test input. It runs a command that normally succeeds in fresh project copies, changes one supported condition at a time, repeats failures, and—where supported—restores a 1-minimal set of environment names or `PATH` entries.
@@ -168,7 +170,7 @@ External symlinks are refused by default without reading their targets. Process-
 
 ## Platform support
 
-The implementation and CI workflow target Windows, macOS, and Linux. Current verified support is recorded from actual CI runs in the repository's checks; see [LIMITATIONS.md](docs/LIMITATIONS.md) for capability-specific differences. A platform is not described as verified until its workflow job succeeds.
+Tested on Windows, macOS, and Linux. The CI matrix runs formatting, Clippy, the full test suite, and a release build on each platform. See the linked workflow badge for current evidence and [LIMITATIONS.md](docs/LIMITATIONS.md) for capability-specific differences.
 
 ## Known limitations
 

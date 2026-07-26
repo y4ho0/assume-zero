@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -28,4 +28,3 @@ jobs:
 Use a finite command and a total budget appropriate for the repository. An exit code of 1 means a confirmed/proven finding, while 2 means the baseline could not support attribution. Store `.assumezero/runs` as a CI artifact only after reviewing its redacted output.
 
 Preparation and tested commands may use the network even though AssumeZero itself does not initiate network access during a check.
-
