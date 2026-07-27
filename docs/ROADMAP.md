@@ -1,5 +1,7 @@
 # Roadmap
 
+[简体中文](zh-CN/ROADMAP.md)
+
 These are candidates, not promises:
 
 1. Evidence-preserving, budgeted pairwise scenario reduction, because interactions can reveal assumptions that single changes do not.
@@ -9,4 +11,3 @@ These are candidates, not promises:
 5. More deterministic oracles, including optional file SHA-256 checks and normalized structured output.
 
 No roadmap item changes the security boundary: AssumeZero remains a testing tool for trusted finite commands, not an untrusted-code sandbox.
-

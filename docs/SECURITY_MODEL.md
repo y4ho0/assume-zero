@@ -1,5 +1,7 @@
 # Security and privacy model
 
+[简体中文](zh-CN/SECURITY_MODEL.md)
+
 ## Boundary
 
 AssumeZero executes user-provided commands with the current user's privileges inside copied workspaces. The copies protect the source workspace from ordinary relative writes by the command. This is not a sandbox, container, virtual machine, privilege boundary, or safe way to execute untrusted code.
@@ -42,4 +44,3 @@ Redaction has unavoidable false-positive and false-negative risk. A tested comma
 ## Reporting a vulnerability
 
 Follow [SECURITY.md](../SECURITY.md). Never include real credentials in an issue or report artifact.
-

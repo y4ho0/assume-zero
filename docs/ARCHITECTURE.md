@@ -1,5 +1,7 @@
 # Architecture
 
+[简体中文](zh-CN/ARCHITECTURE.md)
+
 AssumeZero is a Rust library plus a thin CLI binary. The main modules are:
 
 - `cli`: command selection, configuration precedence, diagnostics, and exit mapping;
@@ -34,4 +36,3 @@ The process runner receives an executable and argument vector; it does not conca
 ## Cross-platform design
 
 Platform-specific code is isolated behind compile-time branches. Windows preserves required process variables and recognizes `PATHEXT`, `.cmd`, and `.bat`; Unix checks executable bits. Path lists use the host separator and preserve order. Unsupported locale/timezone capabilities are skipped rather than treated as passing.
-

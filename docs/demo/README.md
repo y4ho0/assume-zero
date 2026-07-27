@@ -1,5 +1,7 @@
 # Verified fixture demonstrations
 
+[简体中文](../zh-CN/demo/README.md)
+
 These excerpts were produced by the Rust helper fixture on 2026-07-27 on macOS/aarch64. Paths are normalized and fixture secret values are omitted. Every tested command ran in disposable copies.
 
 ## Hidden environment variable

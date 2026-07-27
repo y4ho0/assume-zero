@@ -1,5 +1,7 @@
 # Product specification
 
+[简体中文](zh-CN/PRODUCT_SPEC.md)
+
 ## Product
 
 AssumeZero tests what a project assumes about the machine it runs on. Version 0.1.0 accepts finite commands that exit within a configured timeout: tests, builds, type checks, linters, packaging, code generation, migrations checks, and one-shot scripts.

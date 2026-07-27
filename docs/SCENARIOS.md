@@ -1,5 +1,7 @@
 # Scenarios
 
+[简体中文](zh-CN/SCENARIOS.md)
+
 Every scenario has a stable ID, description, quick/deep profile membership, platform capability rule, and one of five statuses.
 
 ## Quick
@@ -27,4 +29,3 @@ Every scenario has a stable ID, description, quick/deep profile membership, plat
 - `INFRASTRUCTURE_ERROR`: setup/copy/execution infrastructure failed.
 
 Pairwise scenario execution is not enabled in v0.1.0; see [LIMITATIONS.md](LIMITATIONS.md).
-

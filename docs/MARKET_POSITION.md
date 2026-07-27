@@ -1,5 +1,7 @@
 # Market position
 
+[简体中文](zh-CN/MARKET_POSITION.md)
+
 Research date: 2026-07-27
 
 ```text
@@ -14,4 +16,3 @@ AssumeZero's boundary is the combined workflow of controlled environment perturb
 It is not a `.env` validator, dependency-version checker, development-container manager, replacement for Nix or Flox, README runner, artifact reproducibility comparator, syscall fuzzer, static analyzer, secret scanner, or general security sandbox.
 
 No exact mature direct competitor was found within the documented search scope.
-

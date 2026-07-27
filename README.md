@@ -1,5 +1,7 @@
 # AssumeZero
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 [![CI](https://github.com/y4ho0/assume-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/y4ho0/assume-zero/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/y4ho0/assume-zero)](https://github.com/y4ho0/assume-zero/releases/tag/v0.1.0)
 

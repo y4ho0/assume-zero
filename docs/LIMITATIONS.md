@@ -1,5 +1,7 @@
 # Known limitations
 
+[简体中文](zh-CN/LIMITATIONS.md)
+
 Version 0.1.0 intentionally supports only finite, non-interactive commands.
 
 - Workspace copies are isolation from direct relative source writes, not a security sandbox.
@@ -17,7 +19,6 @@ Version 0.1.0 intentionally supports only finite, non-interactive commands.
 - Shell mode is explicitly trusted-input only.
 - Log redaction can miss encoded, transformed, fragmented, or unfamiliar secrets.
 - The tool does not trace arbitrary filesystem access, syscalls, network faults, databases, services, or containers.
-- No crates.io package, GitHub Release, telemetry, account system, cloud backend, or Marketplace Action is provided.
+- No crates.io package, telemetry, account system, cloud backend, or Marketplace Action is provided.
 
 Platform capability is reported at runtime by `assumezero doctor` and in scenario skip statuses.
-

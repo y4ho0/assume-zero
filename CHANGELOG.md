@@ -1,8 +1,14 @@
 # Changelog
 
+[简体中文](CHANGELOG.zh-CN.md)
+
 All notable changes are documented here. The format follows Keep a Changelog, and versions follow Semantic Versioning.
 
 ## [Unreleased]
+
+### Added
+
+- Complete Simplified Chinese documentation with bidirectional navigation and automated coverage/link checks.
 
 ## [0.1.0] - 2026-07-27
 
@@ -20,4 +26,3 @@ All notable changes are documented here. The format follows Keep a Changelog, an
 
 [Unreleased]: https://github.com/y4ho0/assume-zero/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/y4ho0/assume-zero/releases/tag/v0.1.0
-

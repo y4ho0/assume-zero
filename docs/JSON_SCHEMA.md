@@ -1,5 +1,7 @@
 # JSON report schema
 
+[简体中文](zh-CN/JSON_SCHEMA.md)
+
 Every run writes `.assumezero/runs/<run-id>/report.json` conforming to [report-v1.schema.json](../schemas/report-v1.schema.json).
 
 The path-normalized [demonstration report](demo/report-v1.example.json) is validated against that schema in CI. The same CI gate compiles both schemas and validates [examples/assumezero.toml](../examples/assumezero.toml) against the configuration schema after a lossless TOML-to-JSON conversion.
