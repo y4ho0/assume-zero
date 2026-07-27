@@ -1,6 +1,7 @@
 # AssumeZero
 
 [![CI](https://github.com/y4ho0/assume-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/y4ho0/assume-zero/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/y4ho0/assume-zero)](https://github.com/y4ho0/assume-zero/releases/tag/v0.1.0)
 
 > Test what your project assumes about the machine it runs on.
 
@@ -42,6 +43,17 @@ cargo install \
   --tag v0.1.0 \
   --locked
 ```
+
+For a completely immutable source reference:
+
+```bash
+cargo install \
+  --git https://github.com/y4ho0/assume-zero \
+  --rev 1c06b02a42f0b494e2f31bd24af44d14731c712b \
+  --locked
+```
+
+Precompiled archives for Windows x86_64, Linux x86_64, macOS x86_64, and macOS arm64 are available from the [v0.1.0 Release](https://github.com/y4ho0/assume-zero/releases/tag/v0.1.0). Verify downloaded archives with the attached `SHA256SUMS`.
 
 No crates.io package is published for v0.1.0.
 
