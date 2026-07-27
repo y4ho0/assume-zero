@@ -2,6 +2,8 @@
 
 Every run writes `.assumezero/runs/<run-id>/report.json` conforming to [report-v1.schema.json](../schemas/report-v1.schema.json).
 
+The path-normalized [demonstration report](demo/report-v1.example.json) is validated against that schema in CI. The same CI gate compiles both schemas and validates [examples/assumezero.toml](../examples/assumezero.toml) against the configuration schema after a lossless TOML-to-JSON conversion.
+
 Stable top-level fields are:
 
 ```text
@@ -34,4 +36,3 @@ Consumers must:
 - distinguish scenario status from finding evidence level;
 - avoid interpreting `SUSPECTED` as proven;
 - avoid assuming a 1-minimal set is globally minimum.
-

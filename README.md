@@ -37,7 +37,10 @@ It is not a `.env` validator, dependency-version checker, development-container 
 AssumeZero v0.1.0 requires Rust 1.80 or newer:
 
 ```bash
-cargo install --git https://github.com/y4ho0/assume-zero --locked
+cargo install \
+  --git https://github.com/y4ho0/assume-zero \
+  --tag v0.1.0 \
+  --locked
 ```
 
 No crates.io package is published for v0.1.0.

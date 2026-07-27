@@ -9,17 +9,26 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   assumptions:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable snapshot 2026-07
 
       - name: Install AssumeZero
-        run: cargo install --git https://github.com/y4ho0/assume-zero --locked
+        run: |
+          cargo install \
+            --git https://github.com/y4ho0/assume-zero \
+            --tag v0.1.0 \
+            --locked
 
       - name: Check hidden assumptions
         run: assumezero check --config assumezero.toml

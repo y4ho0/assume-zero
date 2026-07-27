@@ -106,5 +106,4 @@ The deterministic flaky fixture alternated exit codes `0` and `1` through state 
 
 ## Machine-readable summary
 
-See [evidence-summary.json](evidence-summary.json). The environment-variable demo report also validated successfully against `schemas/report-v1.schema.json` with a JSON Schema 2020-12 validator.
-
+See [evidence-summary.json](evidence-summary.json) for the compact evidence index and [report-v1.example.json](report-v1.example.json) for the structurally complete, path-normalized environment-variable report. CI validates the latter against `schemas/report-v1.schema.json` with a JSON Schema 2020-12 validator.

@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "tool_version": "0.1.0",
+  "run_id": "01DEMO00000000000000000000",
+  "started_at": "1785081600",
+  "finished_at": "1785081619",
+  "platform": {
+    "os": "macos",
+    "arch": "aarch64",
+    "family": "unix"
+  },
+  "repository_fingerprint": "694428dc6be4b5283e7aa35d76559a83fa68c1384d90c55cb3b1e33099196abe",
+  "configuration": {
+    "source": "<DEMO_PROJECT>/assumezero.toml",
+    "profile": "quick",
+    "timeout_seconds": 30,
+    "baseline_runs": 2,
+    "confirm_failures": 2,
+    "workspace_mode": "working-tree",
+    "report_formats": [
+      "json"
+    ]
+  },
+  "command": [
+    "<DEMO_FIXTURE>",
+    "require-env",
+    "ASSUMEZERO_DEMO_TOKEN"
+  ],
+  "baseline": [
+    {
+      "accepted": true,
+      "exit_code": 0,
+      "duration_ms": 5,
+      "timed_out": false,
+      "interrupted": false,
+      "output_truncated": false,
+      "stdout_summary": "",
+      "stderr_summary": "",
+      "oracle_checks": [
+        {
+          "check": "exit-code",
+          "accepted": true,
+          "detail": "exit code 0 is accepted"
+        }
+      ]
+    },
+    {
+      "accepted": true,
+      "exit_code": 0,
+      "duration_ms": 4,
+      "timed_out": false,
+      "interrupted": false,
+      "output_truncated": false,
+      "stdout_summary": "",
+      "stderr_summary": "",
+      "oracle_checks": [
+        {
+          "check": "exit-code",
+          "accepted": true,
+          "detail": "exit code 0 is accepted"
+        }
+      ]
+    }
+  ],
+  "baseline_status": "STABLE",
+  "scenarios": [
+    {
+      "id": "AZ-S003",
+      "name": "CLEAN_ENV",
+      "description": "Run with a minimal environment allowlist",
+      "status": "FAIL",
+      "best_effort": false,
+      "runs": [
+        {
+          "accepted": false,
+          "exit_code": 1,
+          "duration_ms": 4,
+          "timed_out": false,
+          "interrupted": false,
+          "output_truncated": false,
+          "stdout_summary": "",
+          "stderr_summary": "required environment variable was absent",
+          "oracle_checks": [
+            {
+              "check": "exit-code",
+              "accepted": false,
+              "detail": "exit code 1 is not accepted"
+            }
+          ]
+        },
+        {
+          "accepted": false,
+          "exit_code": 1,
+          "duration_ms": 4,
+          "timed_out": false,
+          "interrupted": false,
+          "output_truncated": false,
+          "stdout_summary": "",
+          "stderr_summary": "required environment variable was absent",
+          "oracle_checks": [
+            {
+              "check": "exit-code",
+              "accepted": false,
+              "detail": "exit code 1 is not accepted"
+            }
+          ]
+        }
+      ],
+      "restored_names": [
+        "ASSUMEZERO_DEMO_TOKEN"
+      ],
+      "minimization_complete": true,
+      "note": "Restoring the named variable repeatedly recovered the command."
+    }
+  ],
+  "findings": [
+    {
+      "id": "AZ-F001",
+      "scenario_id": "AZ-S003",
+      "evidence": "PROVEN",
+      "changed": "Environment variables outside the allowlist were removed.",
+      "observed": "The changed condition failed twice and the minimized restoration passed repeatedly.",
+      "conclusion": "The command depends on the presence of ASSUMEZERO_DEMO_TOKEN.",
+      "next_step": "Declare and provide the required variable in the project execution environment.",
+      "not_proven": "This does not establish a globally unique cause.",
+      "restored_names": [
+        "ASSUMEZERO_DEMO_TOKEN"
+      ]
+    }
+  ],
+  "budget": {
+    "max_total_runs": 40,
+    "max_total_seconds": 300,
+    "runs_used": 19,
+    "elapsed_seconds": 19,
+    "exhausted": false
+  },
+  "redaction_summary": {
+    "environment_values": 1,
+    "paths": 3
+  },
+  "workspace_integrity": {
+    "before_fingerprint": "694428dc6be4b5283e7aa35d76559a83fa68c1384d90c55cb3b1e33099196abe",
+    "after_fingerprint": "694428dc6be4b5283e7aa35d76559a83fa68c1384d90c55cb3b1e33099196abe",
+    "source_unchanged": true,
+    "git_status_before": null,
+    "git_status_after": null,
+    "note": "The demonstration source workspace was unchanged."
+  }
+}
