@@ -530,10 +530,11 @@ mod tests {
 
     #[test]
     fn project_relative_path_segments_are_exact_value_redacted() {
-        let redactor = command_redactor(&["tool", "--token", "abc", "/project/abc"], &[]);
-        let command = ["tool", "--token", "abc", "/project/abc"]
-            .map(String::from)
-            .to_vec();
+        let project = tempfile::tempdir().expect("project");
+        let secret_path = project.path().join("abc").to_string_lossy().into_owned();
+        let command = vec!["tool".into(), "--token".into(), "abc".into(), secret_path];
+        let mut redactor = Redactor::new(&BTreeMap::new(), project.path());
+        redactor.add_commands([command.as_slice()], &[]);
         let rendered = redactor.redact_command(&command).join(" ");
         assert!(!rendered.contains("abc"));
         assert!(rendered.contains("<PROJECT>/***"));
