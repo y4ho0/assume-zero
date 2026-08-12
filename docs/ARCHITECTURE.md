@@ -31,7 +31,7 @@ AssumeZero is a Rust library plus a thin CLI binary. The main modules are:
 10. Fingerprint and compare source state.
 11. Redact in memory and write report schema v1.
 
-The process runner receives an executable and argument vector; it does not concatenate a shell string. Explicit `--shell` converts the user script into platform shell arguments only after displaying the security warning.
+The process runner receives an executable and argument vector; it does not concatenate a shell string by default. Explicit `--shell` can convert multiple structured tokens into platform shell arguments after displaying the security warning. A single opaque script token is refused because its CLI-only secrets cannot be redacted reliably from output evidence.
 
 ## Cross-platform design
 

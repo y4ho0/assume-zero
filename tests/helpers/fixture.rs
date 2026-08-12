@@ -72,12 +72,41 @@ fn main() {
                 false
             }
         }),
+        "echo-args" => {
+            for argument in arguments.iter().skip(1) {
+                println!("stdout-argument={argument}");
+                eprintln!("stderr-argument={argument}");
+            }
+            true
+        }
         "create-file" => arguments
             .get(1)
             .is_some_and(|path| fs::write(path, "created").is_ok()),
+        "replace-cwd-with-symlink" => arguments
+            .get(1)
+            .is_some_and(|target| replace_cwd_with_symlink(Path::new(target))),
         _ => false,
     };
     process::exit(i32::from(!success));
+}
+
+fn replace_cwd_with_symlink(target: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        let Ok(current) = env::current_dir() else {
+            return false;
+        };
+        let Some(parent) = current.parent() else {
+            return false;
+        };
+        let moved = parent.join("moved-project");
+        fs::rename(&current, &moved).is_ok() && std::os::unix::fs::symlink(target, &current).is_ok()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = target;
+        false
+    }
 }
 
 fn home_directory() -> Option<std::path::PathBuf> {

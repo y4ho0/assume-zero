@@ -79,7 +79,7 @@ pub const ALL: &[ScenarioDefinition] = &[
     ScenarioDefinition {
         id: "AZ-S007",
         name: "DEEP_WORKDIR",
-        description: "Run from a safely bounded deep copied workspace path.",
+        description: "Run from a copied workspace with a safely bounded long path component.",
         kind: ScenarioKind::DeepWorkdir,
         quick: true,
         best_effort: false,
@@ -110,7 +110,7 @@ pub const ALL: &[ScenarioDefinition] = &[
     },
 ];
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct EnvironmentPlan {
     pub values: BTreeMap<String, String>,
     pub clear: bool,
@@ -174,15 +174,16 @@ pub fn clean_environment(original: &BTreeMap<String, String>, config: &Config) -
 
 pub fn workspace_name(kind: ScenarioKind, deep_target: usize) -> String {
     match kind {
-        ScenarioKind::SpaceWorkdir => "AssumeZero Test Workspace/project copy".into(),
+        ScenarioKind::SpaceWorkdir => "AssumeZero Test Workspace project copy".into(),
         ScenarioKind::UnicodeWorkdir => "项目-测试-Δ".into(),
         ScenarioKind::DeepWorkdir => {
             let mut result = String::from("deep");
             let mut index = 0;
             while result.len() < deep_target {
-                result.push_str(&format!("/segment-{index:03}"));
+                result.push_str(&format!("-segment-{index:03}"));
                 index += 1;
             }
+            result.truncate(deep_target);
             result
         }
         _ => "project-copy".into(),

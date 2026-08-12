@@ -1,10 +1,11 @@
+use crate::platform;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default = "version_one")]
@@ -44,7 +45,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunConfig {
     #[serde(default)]
@@ -107,6 +108,8 @@ pub struct WorkspaceConfig {
     pub mode: WorkspaceMode,
     #[serde(default = "default_max_size")]
     pub max_size_mib: u64,
+    #[serde(default = "default_max_entries")]
+    pub max_entries: usize,
     #[serde(default = "default_excludes")]
     pub exclude: Vec<String>,
     #[serde(default)]
@@ -122,6 +125,7 @@ impl Default for WorkspaceConfig {
         Self {
             mode: default_workspace_mode(),
             max_size_mib: default_max_size(),
+            max_entries: default_max_entries(),
             exclude: default_excludes(),
             include_untracked: Vec::new(),
             allow_external_symlinks: false,
@@ -136,6 +140,9 @@ fn default_workspace_mode() -> WorkspaceMode {
 const fn default_max_size() -> u64 {
     2_048
 }
+const fn default_max_entries() -> usize {
+    100_000
+}
 fn default_excludes() -> Vec<String> {
     vec![".git".into(), ".assumezero".into()]
 }
@@ -143,7 +150,7 @@ const fn default_deep_path() -> usize {
     180
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleConfig {
     #[serde(default = "default_oracle_kind")]
@@ -252,6 +259,8 @@ pub struct ReportConfig {
     pub redact_home: bool,
     #[serde(default = "default_log_limit")]
     pub log_limit_bytes: usize,
+    #[serde(default)]
+    pub sensitive_options: Vec<String>,
 }
 impl Default for ReportConfig {
     fn default() -> Self {
@@ -259,6 +268,7 @@ impl Default for ReportConfig {
             formats: default_formats(),
             redact_home: true,
             log_limit_bytes: default_log_limit(),
+            sensitive_options: Vec::new(),
         }
     }
 }
@@ -278,8 +288,12 @@ impl Config {
             format!("configuration file `{}` could not be read", path.display())
         })?;
         let config: Self = toml::from_str(&text).map_err(|error| {
+            let location = error.span().map_or_else(
+                || "at an unknown location".into(),
+                |span| format!("near byte offset {}", span.start),
+            );
             anyhow::anyhow!(
-                "configuration error in `{}`: {error}\n\nFix example:\n  \
+                "configuration error in `{}` {location}; parser source excerpts are suppressed because configuration values may be sensitive\n\nFix example:\n  \
                  version = 1\n  [run]\n  command = [\"cargo\", \"test\"]",
                 path.display()
             )
@@ -290,10 +304,7 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         if self.version != 1 {
-            bail!(
-                "unsupported configuration field `version = {}`; use `version = 1`",
-                self.version
-            );
+            bail!("unsupported configuration field `version`; actual value suppressed because configuration values may be sensitive. Use `version = 1`");
         }
         if self.run.timeout_seconds == 0 {
             bail!("field `run.timeout_seconds` must be at least 1");
@@ -316,8 +327,14 @@ impl Config {
         if self.workspace.max_size_mib == 0 {
             bail!("field `workspace.max_size_mib` must be at least 1");
         }
+        if self.workspace.max_entries == 0 {
+            bail!("field `workspace.max_entries` must be at least 1");
+        }
         if self.workspace.deep_path_length < 32 {
             bail!("field `workspace.deep_path_length` must be at least 32");
+        }
+        if self.workspace.deep_path_length > 240 {
+            bail!("field `workspace.deep_path_length` must not exceed 240");
         }
         for path in &self.workspace.include_untracked {
             validate_relative_path("workspace.include_untracked", path)?;
@@ -329,8 +346,11 @@ impl Config {
             bail!("field `oracle.accepted_exit_codes` must not be empty");
         }
         if let Some(pattern) = &self.oracle.stdout_regex {
-            regex::Regex::new(pattern)
-                .with_context(|| "field `oracle.stdout_regex` contains an invalid regex")?;
+            regex::Regex::new(pattern).map_err(|_| {
+                anyhow::anyhow!(
+                    "field `oracle.stdout_regex` contains an invalid regex; pattern suppressed because configuration values may be sensitive"
+                )
+            })?;
         }
         for path in self
             .oracle
@@ -343,10 +363,16 @@ impl Config {
         if !matches!(self.scenarios.profile.as_str(), "quick" | "deep") {
             bail!("field `scenarios.profile` must be `quick` or `deep`");
         }
-        for scenario in self.scenarios.include.iter().chain(&self.scenarios.exclude) {
+        for (index, scenario) in self
+            .scenarios
+            .include
+            .iter()
+            .chain(&self.scenarios.exclude)
+            .enumerate()
+        {
             if !valid_scenario_name(scenario) {
                 bail!(
-                    "scenario `{scenario}` is unknown; run `assumezero list-scenarios` for stable IDs and names"
+                    "field `scenarios.include/exclude[{index}]` contains an unknown scenario; value suppressed because configuration values may be sensitive. Run `assumezero list-scenarios` for stable IDs and names"
                 );
             }
         }
@@ -359,36 +385,44 @@ impl Config {
         let formats: BTreeSet<_> = ["terminal", "json", "markdown", "junit"]
             .into_iter()
             .collect();
-        for format in &self.report.formats {
+        for (index, format) in self.report.formats.iter().enumerate() {
             if !formats.contains(format.as_str()) {
                 bail!(
-                    "field `report.formats` contains unsupported format `{format}`; \
-                     choose terminal, json, markdown, or junit"
+                    "field `report.formats[{index}]` contains an unsupported format; value suppressed because configuration values may be sensitive. Choose terminal, json, markdown, or junit"
                 );
             }
         }
+        if !self.report.redact_home {
+            bail!(
+                "field `report.redact_home` must be true in configuration v1; home-path redaction is a mandatory privacy boundary"
+            );
+        }
         if self.report.log_limit_bytes < 1_024 {
             bail!("field `report.log_limit_bytes` must be at least 1024");
+        }
+        for (index, option) in self.report.sensitive_options.iter().enumerate() {
+            let option_name = option
+                .strip_prefix("--")
+                .or_else(|| option.strip_prefix('-'))
+                .unwrap_or_default();
+            if option_name.is_empty()
+                || option_name.starts_with('-')
+                || option_name.contains('=')
+                || option_name.chars().any(char::is_whitespace)
+            {
+                bail!(
+                    "field `report.sensitive_options[{index}]` contains an invalid option token; value suppressed because it may contain sensitive data. Use a token such as `-p` or `--custom-key`"
+                );
+            }
         }
         Ok(())
     }
 }
 
 fn validate_relative_path(field: &str, path: &Path) -> Result<()> {
-    if path.as_os_str().is_empty()
-        || path.is_absolute()
-        || path.components().any(|component| {
-            matches!(
-                component,
-                std::path::Component::ParentDir
-                    | std::path::Component::RootDir
-                    | std::path::Component::Prefix(_)
-            )
-        })
-    {
+    if !platform::is_portable_relative_path(path) {
         bail!(
-            "field `{field}` contains unsafe path `{}`; use a non-empty relative path without `..`",
-            path.display()
+            "field `{field}` contains an unsafe path; value suppressed because configuration values may be sensitive. Use a non-empty relative path without `..`"
         );
     }
     Ok(())
@@ -432,6 +466,7 @@ confirm_failures = 2
 [workspace]
 mode = "working-tree"
 max_size_mib = 2048
+max_entries = 100000
 exclude = [".git", ".assumezero"]
 include_untracked = []
 
@@ -455,6 +490,7 @@ max_total_seconds = 1800
 [report]
 formats = ["terminal", "json", "markdown"]
 redact_home = true
+sensitive_options = []
 "#;
 
 #[cfg(test)]
@@ -466,12 +502,14 @@ mod tests {
         let config: Config = toml::from_str("version = 1").expect("valid config");
         assert_eq!(config.run.baseline_runs, 2);
         assert_eq!(config.scenarios.profile, "quick");
+        assert_eq!(config.workspace.max_entries, 100_000);
     }
 
     #[test]
     fn unknown_fields_are_rejected() {
         let error = toml::from_str::<Config>("version = 1\ntyop = true")
-            .expect_err("unknown field must fail");
+            .err()
+            .expect("unknown field must fail");
         assert!(error.to_string().contains("unknown field"));
     }
 
@@ -483,12 +521,31 @@ mod tests {
     }
 
     #[test]
+    fn home_path_redaction_cannot_be_disabled() {
+        let mut config = Config::default();
+        config.report.redact_home = false;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
     fn unsafe_untracked_path_is_rejected() {
         let mut config = Config::default();
         config
             .workspace
             .include_untracked
             .push(PathBuf::from("../outside"));
+        assert!(config.validate().is_err());
+
+        config.workspace.include_untracked = vec![PathBuf::from("C:outside")];
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn sensitive_short_options_require_explicit_option_tokens() {
+        let mut config = Config::default();
+        config.report.sensitive_options.push("-p".into());
+        assert!(config.validate().is_ok());
+        config.report.sensitive_options = vec!["password".into()];
         assert!(config.validate().is_err());
     }
 

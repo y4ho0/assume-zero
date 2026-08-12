@@ -32,6 +32,8 @@ assumezero report <run-id> --format markdown|json|junit
 
 Global options are `--verbose`, `--quiet`, `--no-color`, `--json`, and `--config <path>`.
 
+`--shell` remains trusted-input only. v0.1.0 refuses a single opaque script token; use multiple structured tokens, direct argv execution, or recognized environment variables when evidence may contain sensitive values.
+
 ## Baseline
 
 The default is two runs, each in a new project copy with the same command, source state, configuration, and original inherited environment. Every run must satisfy the oracle before attribution starts. Mixed accepted/rejected runs produce `BASELINE_UNSTABLE`; consistently rejected runs produce `BASELINE_FAILED`. `--strict-output` additionally requires identical redacted stdout/stderr summaries and exit codes.
@@ -57,7 +59,7 @@ Absolute and parent-traversing oracle file paths are rejected. Each run records 
 
 `git-clean` uses Git's tracked-file list plus relative paths explicitly named in `workspace.include_untracked`. It does not copy `.git`, ignored dependencies, or build output by default. It generally needs preparation commands.
 
-The default maximum copied size is 2 GiB. External symlinks are refused unless the user explicitly accepts their risk.
+The default copy limits are 2 GiB and 100,000 filesystem entries. Eligible sources, sizes, and entry counts are preflighted before the destination project directory is created; oversized copies fail before mutation. The same entry count also bounds source-fingerprint collection across the source tree (excluding `.git` and `.assumezero`, but not other workspace exclusions), and fingerprint path storage has a 64 MiB hard limit. Workspace names are exactly one normal path component. External symlinks and paths crossing symlink ancestors are refused unless the user explicitly accepts the limited final-link exception; nested traversal through symlinks is always refused.
 
 ## Minimization
 

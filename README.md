@@ -25,7 +25,7 @@ Scenarios:
   0 skipped
   0 inconclusive/infrastructure
 
-Secret values persisted: no environment values are report fields
+Secret values persisted: no recognized environment or CLI secret values are report fields
 Source workspace unchanged: yes
 ```
 
@@ -90,7 +90,7 @@ AssumeZero always prints the final command it selected. Arguments after `--` ove
 | AZ-S004 | `MINIMAL_PATH` | deep | Keeps the top-level command directory, system essentials, and explicit entries |
 | AZ-S005 | `SPACE_WORKDIR` | ✓ | Uses a copied path containing multiple spaces |
 | AZ-S006 | `UNICODE_WORKDIR` | ✓ | Uses a copied path containing Unicode |
-| AZ-S007 | `DEEP_WORKDIR` | ✓ | Uses a safely bounded deep path |
+| AZ-S007 | `DEEP_WORKDIR` | ✓ | Uses a safely bounded long path component |
 | AZ-S008 | `REDIRECTED_TEMP` | ✓ | Redirects `TMP`, `TEMP`, and `TMPDIR` |
 | AZ-S009 | `TIMEZONE_UTC` | deep | Sets process-level `TZ=UTC` on supported platforms; best effort |
 | AZ-S010 | `LOCALE_C` | deep | Sets `LANG=C` and `LC_ALL=C` when the locale exists |
@@ -130,6 +130,7 @@ confirm_failures = 2
 [workspace]
 mode = "working-tree"
 max_size_mib = 2048
+max_entries = 100000
 exclude = [".git", ".assumezero"]
 include_untracked = []
 
@@ -146,6 +147,7 @@ max_total_seconds = 1800
 
 [report]
 formats = ["terminal", "json", "markdown"]
+sensitive_options = [] # For ambiguous short secret flags, for example ["-p"]
 ```
 
 Unknown fields fail validation. Output-text, regular-expression, required-file, and forbidden-file oracle conditions are documented in [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md). The machine-readable format is [config-v1.schema.json](schemas/config-v1.schema.json).
@@ -173,7 +175,7 @@ Verified fixture transcripts for hidden environment variables, hidden child tool
 
 ## Privacy
 
-AssumeZero itself does not upload files, call external APIs, send telemetry, inspect the contents of the real home directory, or persist environment-variable values. Sensitive environment values are used only in memory to redact command output before it is written. Reports contain names, presence/classification metadata, and redacted output summaries.
+AssumeZero itself does not upload files, call external APIs, send telemetry, inspect the contents of the real home directory, or persist recognized secret values. Sensitive environment values and values of recognized long CLI options such as `--token`, `--password`, and `--api-key` are used only in memory to redact command/output evidence before it is written. Configure ambiguous short or custom options in `report.sensitive_options`; a configured single-character short option covers `-p value`, `-p=value`, and `-pVALUE`. Reports contain names, presence/classification metadata, and redacted output summaries.
 
 User-provided preparation and tested commands can still access the network and other resources available to the current user. Redaction is defense in depth; pattern matching can have both false positives and false negatives.
 
@@ -183,7 +185,7 @@ User-provided preparation and tested commands can still access the network and o
 
 The tested command never has the source project as its working directory, but it retains the current user's operating-system privileges. It can deliberately reach outside its copied workspace. Do not use AssumeZero to run untrusted code. Shell parsing is disabled unless `--shell` is explicitly selected, in which case a warning is shown.
 
-External symlinks are refused by default without reading their targets. Process-tree termination on timeout or interruption is best effort and cannot be guaranteed on every platform.
+External symlinks are refused by default after resolving their targets for containment, without reading target file contents. Process-tree termination on timeout or interruption is best effort and cannot be guaranteed on every platform.
 
 ## Platform support
 

@@ -10,6 +10,19 @@ All notable changes are documented here. The format follows Keep a Changelog, an
 
 - Complete Simplified Chinese documentation with bidirectional navigation and automated coverage/link checks.
 
+### Security
+
+- Reject workspace paths that escape through intermediate symlinks, unsafe workspace names, destination ancestors, or file-Oracle symlinks.
+- Reject report run-ID traversal and report-root/output symlink escapes; stage report files before publication, cap all generated artifacts at 64 MiB, and apply the same limit when loading JSON reports.
+- Preflight workspace byte and entry budgets before destination mutation, preserve Git path bytes on Unix, and stream source fingerprinting.
+- Frame raw platform path bytes in source fingerprints and persist Git status as a SHA-256 digest; integrity hashes are version-specific rather than cross-version identifiers.
+- Redact sensitive environment values of any non-empty length, `HOME`/`USERPROFILE` paths, and recognized or configured CLI option values consistently across displays and persisted evidence, including configured attached short forms such as `-pVALUE`.
+- Require `report.redact_home = true` in configuration v1 so the documented home-path privacy boundary cannot be disabled accidentally.
+- Revalidate saved report-v1 structure before rendering, reject unknown fields without echoing parser details, and reapply command-derived redaction to legacy report metadata during regeneration.
+- Refuse single-string opaque shell scripts and fail closed on regeneration of saved Shell-wrapper reports when historical output cannot be redacted safely.
+- Use bounded multi-pattern literal redaction and render control characters visibly in terminal, Markdown, and valid XML evidence.
+- Bound `deep_path_length` to 240 bytes so generated workspace names remain one portable component; configurations above that limit now fail validation.
+
 ## [0.1.0] - 2026-07-27
 
 ### Added

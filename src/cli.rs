@@ -1,6 +1,7 @@
 use crate::config::{Config, EXAMPLE_CONFIG};
 use crate::engine;
 use crate::platform;
+use crate::redaction::Redactor;
 use crate::report;
 use crate::scenarios;
 use anyhow::{Context, Result};
@@ -11,7 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 #[command(
     name = "assumezero",
     version,
@@ -38,7 +39,7 @@ pub struct Cli {
     command: Commands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Subcommand)]
 enum Commands {
     /// Create a documented assumezero.toml configuration.
     Init {
@@ -101,8 +102,16 @@ pub fn run_cli() -> Result<u8> {
     match execute(cli) {
         Ok(code) => Ok(code),
         Err(error) => {
+            let rendered = env::current_dir().ok().map_or_else(
+                || report::terminal_safe(&format!("{error:#}")),
+                |project| {
+                    let redacted = Redactor::new(&env::vars().collect(), &project)
+                        .redact(&format!("{error:#}"));
+                    report::terminal_safe(&redacted)
+                },
+            );
             eprintln!("AssumeZero could not use the requested configuration or command.");
-            eprintln!("\nWhat happened:\n  {error:#}");
+            eprintln!("\nWhat happened:\n  {rendered}");
             eprintln!("\nOriginal project modified:\n  No tested command was run in the source directory.");
             eprintln!(
                 "\nNext:\n  Correct the field or command shown above, or run `assumezero doctor`."
@@ -122,7 +131,8 @@ fn execute(cli: Cli) -> Result<u8> {
             Ok(0)
         }
         Commands::Explain { run_id } => {
-            let saved = report::load(&current, &run_id)?;
+            let mut saved = report::load(&current, &run_id)?;
+            redact_loaded_report(&current, &mut saved)?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&saved.findings)?);
             } else {
@@ -131,11 +141,18 @@ fn execute(cli: Cli) -> Result<u8> {
             Ok(0)
         }
         Commands::Report { run_id, format } => {
-            let saved = report::load(&current, &run_id)?;
+            let mut saved = report::load(&current, &run_id)?;
+            redact_loaded_report(&current, &mut saved)?;
             let path = report::write_requested_format(&current, &saved, format.as_str())?;
             println!(
                 "Wrote <PROJECT>/{}",
-                path.strip_prefix(&current).unwrap_or(&path).display()
+                report::terminal_safe(
+                    &path
+                        .strip_prefix(&current)
+                        .unwrap_or(&path)
+                        .display()
+                        .to_string()
+                )
             );
             Ok(0)
         }
@@ -147,7 +164,12 @@ fn execute(cli: Cli) -> Result<u8> {
             suspected_is_failure,
             command,
         } => {
-            let (mut config, source) = load_config(cli.config.as_deref(), &current)?;
+            let mut bootstrap_redactor = Redactor::new(&env::vars().collect(), &current);
+            bootstrap_redactor.add_commands([command.as_slice()], &[]);
+            let (mut config, source) =
+                load_config(cli.config.as_deref(), &current).map_err(|error| {
+                    anyhow::anyhow!(bootstrap_redactor.redact(&format!("{error:#}")))
+                })?;
             if let Some(profile) = profile {
                 config.scenarios.profile = profile;
             }
@@ -163,6 +185,12 @@ fn execute(cli: Cli) -> Result<u8> {
                 anyhow::bail!(
                     "no command is configured; use `assumezero check -- cargo test` \
                      or set `run.command` in assumezero.toml"
+                );
+            }
+            let logical_command = final_command.clone();
+            if shell && logical_command.len() == 1 {
+                anyhow::bail!(
+                    "a single opaque `--shell` script is refused because its CLI secret values cannot be redacted reliably; pass a structured argument vector without `--shell`, or move sensitive values into recognized environment variables"
                 );
             }
             if shell {
@@ -191,18 +219,33 @@ fn execute(cli: Cli) -> Result<u8> {
             }
             config.run.command.clone_from(&final_command);
             config.validate()?;
+            let command_redactor =
+                redactor_for_commands(&config, &current, &final_command, &logical_command);
+            let redacted_command = command_redactor.redact_command(&final_command);
+            let redacted_source = command_redactor.redact(&source);
             if dry_run {
-                dry_run_summary(&config, &source, &final_command, cli.json);
+                dry_run_summary(&config, &redacted_source, &redacted_command, cli.json);
                 return Ok(0);
             }
             if !cli.quiet {
                 eprintln!(
                     "Final command: {}",
-                    safe_command_for_display(&final_command, &current)
+                    report::terminal_safe(&redacted_command.join(" "))
                 );
-                eprintln!("Configuration source: {source}");
+                eprintln!(
+                    "Configuration source: {}",
+                    report::terminal_safe(&redacted_source)
+                );
             }
-            let output = engine::check(&current, &config, &source, &final_command, cli.verbose)?;
+            let output = engine::check(
+                &current,
+                &config,
+                &redacted_source,
+                &final_command,
+                &logical_command,
+                cli.verbose,
+            )
+            .map_err(|error| anyhow::anyhow!(command_redactor.redact(&format!("{error:#}"))))?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&output.report)?);
             } else {
@@ -210,11 +253,14 @@ fn execute(cli: Cli) -> Result<u8> {
                 if !cli.quiet {
                     println!(
                         "Evidence: <PROJECT>/{}",
-                        output
-                            .directory
-                            .strip_prefix(&current)
-                            .unwrap_or(&output.directory)
-                            .display()
+                        report::terminal_safe(
+                            &output
+                                .directory
+                                .strip_prefix(&current)
+                                .unwrap_or(&output.directory)
+                                .display()
+                                .to_string()
+                        )
                     );
                 }
             }
@@ -244,31 +290,55 @@ fn load_config(explicit: Option<&Path>, current: &Path) -> Result<(Config, Strin
     }
 }
 
-fn safe_command_for_display(command: &[String], project: &Path) -> String {
-    let home = env::var_os("HOME").map(PathBuf::from);
-    command
-        .iter()
-        .map(|part| {
-            let path = Path::new(part);
-            if !path.is_absolute() {
-                return part.clone();
-            }
-            if let Ok(relative) = path.strip_prefix(project) {
-                return format!("<PROJECT>/{}", relative.display());
-            }
-            if let Some(home) = &home {
-                if let Ok(relative) = path.strip_prefix(home) {
-                    return format!("<HOME>/{}", relative.display());
-                }
-            }
-            format!(
-                "<ABSOLUTE_PATH>/{}",
-                path.file_name()
-                    .map_or_else(|| "item".into(), |name| name.to_string_lossy())
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+fn redactor_for_commands(
+    config: &Config,
+    project: &Path,
+    command: &[String],
+    logical_command: &[String],
+) -> Redactor {
+    let environment = env::vars().collect();
+    let mut redactor = Redactor::new(&environment, project);
+    redactor.add_commands(
+        std::iter::once(command)
+            .chain(std::iter::once(logical_command))
+            .chain(config.run.prepare.iter().map(Vec::as_slice)),
+        &config.report.sensitive_options,
+    );
+    redactor
+}
+
+fn redact_loaded_report(project: &Path, report: &mut crate::model::Report) -> Result<()> {
+    reject_raw_opaque_shell_report(&report.command)?;
+    let mut redactor = Redactor::new(&env::vars().collect(), project);
+    redactor.add_commands([report.command.as_slice()], &[]);
+    redactor.redact_loaded_report(report);
+    Ok(())
+}
+
+fn reject_raw_opaque_shell_report(command: &[String]) -> Result<()> {
+    if is_shell_wrapper(command) {
+        anyhow::bail!(
+            "saved report contains a shell wrapper whose historical output cannot be redacted reliably and therefore cannot be rendered safely; command details are suppressed"
+        );
+    }
+    Ok(())
+}
+
+fn is_shell_wrapper(command: &[String]) -> bool {
+    let Some(executable) = command.first() else {
+        return false;
+    };
+    let basename = executable
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(executable)
+        .to_ascii_lowercase();
+    (basename == "sh" && command.len() == 3 && command[1] == "-c")
+        || (command.len() == 5
+            && command[1..4]
+                .iter()
+                .zip(["/d", "/s", "/c"])
+                .all(|(actual, expected)| actual.eq_ignore_ascii_case(expected)))
 }
 
 fn init(path: &Path, force: bool, json_output: bool) -> Result<u8> {
@@ -287,7 +357,10 @@ fn init(path: &Path, force: bool, json_output: bool) -> Result<u8> {
     if json_output {
         println!("{}", json!({"created": path, "overwritten": force}));
     } else {
-        println!("Created {}", path.display());
+        println!(
+            "Created {}",
+            report::terminal_safe(&path.display().to_string())
+        );
         println!("Next: edit [run].command, then run `assumezero doctor`.");
     }
     Ok(0)
@@ -449,8 +522,11 @@ fn dry_run_summary(config: &Config, source: &str, command: &[String], json_outpu
         );
     } else {
         println!("AssumeZero dry run\n");
-        println!("Final command: {}", command.join(" "));
-        println!("Configuration source: {source}");
+        println!(
+            "Final command: {}",
+            report::terminal_safe(&command.join(" "))
+        );
+        println!("Configuration source: {}", report::terminal_safe(source));
         println!("Profile: {}", config.scenarios.profile);
         println!("Baseline runs: {}", config.run.baseline_runs);
         println!("Scenarios: {}", selected.join(", "));
@@ -479,5 +555,52 @@ mod tests {
             cli
         };
         assert_eq!(final_command, vec!["cli"]);
+    }
+
+    #[test]
+    fn legacy_opaque_shell_wrappers_are_detected_portably() {
+        for command in [
+            vec!["/bin/sh", "-c", "raw"],
+            vec!["<ABSOLUTE_PATH>/sh", "-c", "raw"],
+            vec![r"C:\Windows\System32\cmd.exe", "/D", "/S", "/C", "raw"],
+            vec!["<ABSOLUTE_PATH>/cmd.exe", "/d", "/s", "/c", "raw"],
+            vec![
+                "<ABSOLUTE_PATH>/custom-comspec.exe",
+                "/D",
+                "/S",
+                "/C",
+                "raw",
+            ],
+        ] {
+            let command = command.into_iter().map(String::from).collect::<Vec<_>>();
+            assert!(is_shell_wrapper(&command), "{command:?}");
+        }
+        for command in [
+            vec!["bash", "-c", "raw"],
+            vec!["sh", "-lc", "raw"],
+            vec!["sh", "script.sh"],
+            vec!["cmd.exe", "/S", "/C", "raw"],
+            vec!["tool", "-c", "ordinary"],
+        ] {
+            let command = command.into_iter().map(String::from).collect::<Vec<_>>();
+            assert!(!is_shell_wrapper(&command), "{command:?}");
+        }
+
+        let sentinel = "AZ_INVALID_LEGACY_SHELL_UNIT_7712";
+        let raw = ["<ABSOLUTE_PATH>/sh", "-c", sentinel]
+            .map(String::from)
+            .to_vec();
+        let error = reject_raw_opaque_shell_report(&raw)
+            .expect_err("raw shell report must be refused")
+            .to_string();
+        assert!(!error.contains(sentinel));
+
+        let redacted = ["<ABSOLUTE_PATH>/sh", "-c", "<REDACTED_OPAQUE_SHELL_SCRIPT>"]
+            .map(String::from)
+            .to_vec();
+        let error = reject_raw_opaque_shell_report(&redacted)
+            .expect_err("historical output remains untrusted even with a redacted command")
+            .to_string();
+        assert!(!error.contains("REDACTED_OPAQUE_SHELL_SCRIPT"));
     }
 }

@@ -25,7 +25,11 @@
   "properties": {
     "schema_version": { "const": 1 },
     "tool_version": { "type": "string" },
-    "run_id": { "type": "string", "minLength": 1 },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+      "description": "A canonical 26-character ULID and one portable path component."
+    },
     "started_at": { "type": "string", "pattern": "^[0-9]+$" },
     "finished_at": { "type": "string", "pattern": "^[0-9]+$" },
     "platform": {
@@ -256,4 +260,3 @@
     }
   }
 }
-

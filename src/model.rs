@@ -23,6 +23,7 @@ pub enum EvidenceLevel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OracleCheck {
     pub check: String,
     pub accepted: bool,
@@ -30,6 +31,7 @@ pub struct OracleCheck {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunEvidence {
     pub accepted: bool,
     pub exit_code: Option<i32>,
@@ -43,6 +45,7 @@ pub struct RunEvidence {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScenarioEvidence {
     pub id: String,
     pub name: String,
@@ -56,6 +59,7 @@ pub struct ScenarioEvidence {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Finding {
     pub id: String,
     pub scenario_id: String,
@@ -69,6 +73,7 @@ pub struct Finding {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BudgetEvidence {
     pub max_total_runs: usize,
     pub max_total_seconds: u64,
@@ -78,6 +83,7 @@ pub struct BudgetEvidence {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IntegrityEvidence {
     pub before_fingerprint: String,
     pub after_fingerprint: String,
@@ -88,6 +94,7 @@ pub struct IntegrityEvidence {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReportConfiguration {
     pub source: String,
     pub profile: String,
@@ -99,6 +106,7 @@ pub struct ReportConfiguration {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Report {
     pub schema_version: u32,
     pub tool_version: String,
@@ -118,7 +126,7 @@ pub struct Report {
     pub workspace_integrity: IntegrityEvidence,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ExecutionRequest {
     pub executable: PathBuf,
     pub args: Vec<String>,
@@ -127,10 +135,8 @@ pub struct ExecutionRequest {
     pub clear_env: bool,
     pub timeout_seconds: u64,
     pub log_limit_bytes: usize,
-    pub verbose: bool,
 }
 
-#[derive(Debug)]
 pub struct RawExecution {
     pub exit_code: Option<i32>,
     pub duration_ms: u128,

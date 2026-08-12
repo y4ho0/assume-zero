@@ -1,7 +1,10 @@
 use crate::config::OracleConfig;
 use crate::model::{OracleCheck, RawExecution, RunEvidence};
+use crate::platform;
 use anyhow::{Context, Result};
 use regex::Regex;
+use std::fs;
+use std::io::ErrorKind;
 use std::path::Path;
 
 pub fn evaluate(
@@ -72,6 +75,9 @@ pub fn evaluate(
             detail: format!("forbidden `{}`", path.display()),
         });
     }
+    for check in &mut checks {
+        check.detail = redact(&check.detail);
+    }
 
     Ok(RunEvidence {
         accepted: checks.iter().all(|check| check.accepted),
@@ -87,22 +93,55 @@ pub fn evaluate(
 }
 
 fn safe_join(root: &Path, relative: &Path) -> Result<std::path::PathBuf> {
-    if relative.is_absolute()
-        || relative.components().any(|component| {
-            matches!(
-                component,
-                std::path::Component::ParentDir
-                    | std::path::Component::RootDir
-                    | std::path::Component::Prefix(_)
-            )
-        })
-    {
+    if !platform::is_portable_relative_path(relative) {
         anyhow::bail!(
             "oracle file path `{}` must remain inside the copied workspace",
             relative.display()
         );
     }
-    Ok(root.join(relative))
+    let root_metadata = fs::symlink_metadata(root)
+        .context("copied workspace root could not be inspected for a file oracle")?;
+    if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
+        anyhow::bail!("copied workspace root was replaced by a symlink or non-directory entry");
+    }
+    let canonical_root = root
+        .canonicalize()
+        .context("copied workspace root could not be resolved for a file oracle")?;
+    if canonical_root != root {
+        anyhow::bail!("copied workspace root resolved differently before a file oracle");
+    }
+    let candidate = canonical_root.join(relative);
+    let mut current = canonical_root.clone();
+    for component in relative.components() {
+        current.push(component.as_os_str());
+        match fs::symlink_metadata(&current) {
+            Ok(_) => {
+                let resolved = current.canonicalize().with_context(|| {
+                    format!(
+                        "oracle file path `{}` contains a broken or unresolvable symlink",
+                        relative.display()
+                    )
+                })?;
+                if resolved.strip_prefix(&canonical_root).is_err() {
+                    anyhow::bail!(
+                        "oracle file path `{}` resolves outside the copied workspace",
+                        relative.display()
+                    );
+                }
+                current = resolved;
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(candidate),
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "oracle file path `{}` could not be inspected",
+                        relative.display()
+                    )
+                });
+            }
+        }
+    }
+    Ok(current)
 }
 
 #[cfg(test)]
@@ -139,5 +178,47 @@ mod tests {
     #[test]
     fn traversal_in_file_oracle_is_rejected() {
         assert!(safe_join(Path::new("/tmp/project"), Path::new("../secret")).is_err());
+    }
+
+    #[test]
+    fn windows_style_traversal_is_rejected_portably() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        for path in ["C:secret", "C:\\secret"] {
+            assert!(
+                safe_join(directory.path(), Path::new(path)).is_err(),
+                "{path}"
+            );
+        }
+        #[cfg(not(windows))]
+        assert!(safe_join(directory.path(), Path::new("nested\\secret")).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_oracle_refuses_symlinks_outside_workspace() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("secret"), "outside").expect("outside file");
+        std::os::unix::fs::symlink(outside.path(), workspace.path().join("link")).expect("symlink");
+        assert!(safe_join(
+            &workspace.path().canonicalize().expect("workspace"),
+            Path::new("link/secret")
+        )
+        .is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_oracle_refuses_a_replaced_workspace_root() {
+        let parent = tempfile::tempdir().expect("parent");
+        let workspace = parent.path().join("workspace");
+        let moved = parent.path().join("moved");
+        let outside = tempfile::tempdir().expect("outside");
+        fs::create_dir(&workspace).expect("workspace");
+        fs::write(outside.path().join("secret"), "outside").expect("outside file");
+        let canonical_workspace = workspace.canonicalize().expect("canonical workspace");
+        fs::rename(&workspace, moved).expect("move workspace");
+        std::os::unix::fs::symlink(outside.path(), &workspace).expect("replace with symlink");
+        assert!(safe_join(&canonical_workspace, Path::new("secret")).is_err());
     }
 }

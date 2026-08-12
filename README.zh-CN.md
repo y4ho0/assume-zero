@@ -25,7 +25,7 @@ Scenarios:
   0 skipped
   0 inconclusive/infrastructure
 
-Secret values persisted: no environment values are report fields
+Secret values persisted: no recognized environment or CLI secret values are report fields
 Source workspace unchanged: yes
 ```
 
@@ -90,7 +90,7 @@ AssumeZero 总会打印最终选中的命令。`--` 后的参数优先于配置�
 | AZ-S004 | `MINIMAL_PATH` | deep | 保留顶层命令目录、系统必需目录和显式保留条目 |
 | AZ-S005 | `SPACE_WORKDIR` | ✓ | 使用包含多个空格的副本路径 |
 | AZ-S006 | `UNICODE_WORKDIR` | ✓ | 使用包含 Unicode 的副本路径 |
-| AZ-S007 | `DEEP_WORKDIR` | ✓ | 使用安全、有界的深层路径 |
+| AZ-S007 | `DEEP_WORKDIR` | ✓ | 使用安全、有界的长路径组件 |
 | AZ-S008 | `REDIRECTED_TEMP` | ✓ | 重定向 `TMP`、`TEMP` 和 `TMPDIR` |
 | AZ-S009 | `TIMEZONE_UTC` | deep | 在支持的平台上设置进程级 `TZ=UTC`；best effort |
 | AZ-S010 | `LOCALE_C` | deep | 在 C/POSIX Locale 可用时设置 `LANG=C` 和 `LC_ALL=C` |
@@ -130,6 +130,7 @@ confirm_failures = 2
 [workspace]
 mode = "working-tree"
 max_size_mib = 2048
+max_entries = 100000
 exclude = [".git", ".assumezero"]
 include_untracked = []
 
@@ -146,6 +147,7 @@ max_total_seconds = 1800
 
 [report]
 formats = ["terminal", "json", "markdown"]
+sensitive_options = [] # 含秘密值的歧义短选项，例如 ["-p"]
 ```
 
 未知字段会导致校验失败。输出文本、正则表达式、必需文件和禁止文件等 Oracle 条件见[产品规格](docs/zh-CN/PRODUCT_SPEC.md)。机器可读配置格式见 [config-v1.schema.json](schemas/config-v1.schema.json)；字段名保持英文，作为稳定接口的一部分。
@@ -173,7 +175,7 @@ assumezero explain <run-id>
 
 ## 隐私
 
-AssumeZero 本身不会上传文件、调用外部 API、发送遥测、检查真实主目录的内容或持久化环境变量值。敏感环境值只在内存中用于输出脱敏，随后才写入报告。报告只包含名称、存在性/分类元数据和脱敏后的输出摘要。
+AssumeZero 本身不会上传文件、调用外部 API、发送遥测、检查真实主目录的内容或持久化已识别的秘密值。敏感环境值以及 `--token`、`--password`、`--api-key` 等已识别长 CLI 选项的值只在内存中用于命令/输出证据脱敏，随后才写入报告。存在歧义的短选项或自定义选项需在 `report.sensitive_options` 中声明；已声明的单字符短选项会覆盖 `-p value`、`-p=value` 和 `-pVALUE`。报告只包含名称、存在性/分类元数据和脱敏后的输出摘要。
 
 用户提供的准备命令和被测命令仍可访问当前用户可访问的网络及其他资源。脱敏是纵深防御，模式匹配可能出现误报或漏报。
 
@@ -183,7 +185,7 @@ AssumeZero 本身不会上传文件、调用外部 API、发送遥测、检查�
 
 被测命令不会以源项目作为工作目录，但仍保留当前用户的操作系统权限，因此可以故意访问副本之外的资源。不要用 AssumeZero 运行不受信任代码。除非显式选择 `--shell`，否则禁用 Shell 解析；启用时会显示警告。
 
-默认拒绝指向外部的符号链接，并且不会读取目标。超时或中断后的进程树终止是 best effort，无法在所有平台上保证。
+默认拒绝指向外部的符号链接；工具会解析目标以判断边界，但不会读取目标文件内容。超时或中断后的进程树终止是 best effort，无法在所有平台上保证。
 
 ## 平台支持
 

@@ -16,10 +16,10 @@ use anyhow::{bail, Context as _, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-#[derive(Debug)]
 struct ResolvedCommand {
     display: Vec<String>,
     executable: PathBuf,
@@ -86,6 +86,7 @@ struct Context<'a> {
     config: &'a Config,
     command: &'a ResolvedCommand,
     original_environment: &'a BTreeMap<String, String>,
+    redactor: &'a Redactor,
     verbose: bool,
     budget: &'a mut Budget,
 }
@@ -100,6 +101,7 @@ pub fn check(
     config: &Config,
     config_source: &str,
     command_tokens: &[String],
+    logical_command_tokens: &[String],
     verbose: bool,
 ) -> Result<EngineOutput> {
     config.validate()?;
@@ -108,11 +110,18 @@ pub fn check(
         .context("current project directory could not be resolved")?;
     let original_environment: BTreeMap<String, String> = env::vars().collect();
     let command = resolve_command(&source, command_tokens, &original_environment)?;
-    let before_fingerprint = fingerprint::source_fingerprint(&source)?;
+    let before_fingerprint =
+        fingerprint::source_fingerprint(&source, config.workspace.max_entries)?;
     let git_before = fingerprint::git_status(&source);
     let started_at = timestamp();
     let mut budget = Budget::new(config);
-    let base_redactor = Redactor::new(&original_environment, &source);
+    let mut base_redactor = Redactor::new(&original_environment, &source);
+    base_redactor.add_commands(
+        std::iter::once(command.display.as_slice())
+            .chain(std::iter::once(logical_command_tokens))
+            .chain(config.run.prepare.iter().map(Vec::as_slice)),
+        &config.report.sensitive_options,
+    );
 
     let mut baseline = Vec::new();
     {
@@ -121,6 +130,7 @@ pub fn check(
             config,
             command: &command,
             original_environment: &original_environment,
+            redactor: &base_redactor,
             verbose,
             budget: &mut budget,
         };
@@ -148,6 +158,7 @@ pub fn check(
             config,
             command: &command,
             original_environment: &original_environment,
+            redactor: &base_redactor,
             verbose,
             budget: &mut budget,
         };
@@ -164,7 +175,7 @@ pub fn check(
         }
     }
 
-    let after_fingerprint = fingerprint::source_fingerprint(&source)?;
+    let after_fingerprint = fingerprint::source_fingerprint(&source, config.workspace.max_entries)?;
     let git_after = fingerprint::git_status(&source);
     let source_unchanged = before_fingerprint == after_fingerprint && git_before == git_after;
     let integrity = IntegrityEvidence {
@@ -175,7 +186,7 @@ pub fn check(
         git_status_after: git_after,
         note: "Fingerprint and Git-status comparison exclude .git and AssumeZero's own .assumezero report directory; tested commands ran only in disposable copies.".into(),
     };
-    let report = Report {
+    let mut report = Report {
         schema_version: 1,
         tool_version: env!("CARGO_PKG_VERSION").into(),
         run_id: ulid::Ulid::new().to_string(),
@@ -192,11 +203,7 @@ pub fn check(
             workspace_mode: config.workspace.mode.as_str().into(),
             report_formats: config.report.formats.clone(),
         },
-        command: command
-            .display
-            .iter()
-            .map(|part| redact_command_part(part, &base_redactor, &source))
-            .collect(),
+        command: base_redactor.redact_command(&command.display),
         baseline,
         baseline_status,
         scenarios: scenario_results,
@@ -204,11 +211,18 @@ pub fn check(
         budget: budget.evidence(),
         redaction_summary: BTreeMap::from([
             ("in_memory_rules".into(), base_redactor.rule_count()),
+            (
+                "literal_rule_budget_exhausted".into(),
+                usize::from(base_redactor.rule_budget_exhausted()),
+            ),
             ("persisted_environment_values".into(), 0),
+            ("persisted_cli_sensitive_values".into(), 0),
         ]),
         workspace_integrity: integrity,
     };
-    let directory = report::persist(&source, &report, &config.report.formats)?;
+    base_redactor.redact_report(&mut report);
+    let directory = report::persist(&source, &report, &config.report.formats)
+        .map_err(|error| redacted_error(error, &base_redactor))?;
     Ok(EngineOutput { report, directory })
 }
 
@@ -581,7 +595,12 @@ fn run_once(
     plan_spec: PlanSpec,
     workspace_name: &str,
 ) -> Result<Attempt> {
-    let isolated = workspace::create(context.source, &context.config.workspace, workspace_name)?;
+    let isolated = workspace::create(context.source, &context.config.workspace, workspace_name)
+        .map_err(|error| redacted_error(error, context.redactor))?;
+    let redactor = redactor_for(context.redactor, &isolated);
+    isolated
+        .validate_boundary()
+        .map_err(|error| redacted_error(error, &redactor))?;
     let project = isolated.project();
     let executable = context.command.workspace_relative.as_ref().map_or_else(
         || context.command.executable.clone(),
@@ -639,6 +658,9 @@ fn run_once(
         if !context.budget.take() {
             return Ok(Attempt::BudgetExhausted);
         }
+        isolated
+            .validate_boundary()
+            .map_err(|error| redacted_error(error, &redactor))?;
         let raw = run_tokens(
             context.source,
             project,
@@ -646,22 +668,31 @@ fn run_once(
             &plan,
             context.config.run.timeout_seconds,
             context.config.report.log_limit_bytes,
-            context.verbose,
-        )?;
-        let redactor = redactor_for(context.original_environment, context.source, &isolated);
+        )
+        .map_err(|error| redacted_error(error, &redactor))?;
+        isolated
+            .validate_boundary()
+            .map_err(|error| redacted_error(error, &redactor))?;
         let evidence = oracle::evaluate(raw, &OracleConfig::default(), project, |text| {
             redactor.redact(text)
-        })?;
+        })
+        .map_err(|error| redacted_error(error, &redactor))?;
+        if context.verbose {
+            emit_verbose_evidence(&evidence);
+        }
         if !evidence.accepted {
             bail!(
                 "prepare command `{}` failed in an isolated workspace",
-                prepare.join(" ")
+                redactor.redact_command(prepare).join(" ")
             );
         }
     }
     if !context.budget.take() {
         return Ok(Attempt::BudgetExhausted);
     }
+    isolated
+        .validate_boundary()
+        .map_err(|error| redacted_error(error, &redactor))?;
     let raw = runner::execute(&ExecutionRequest {
         executable,
         args: context.command.args.clone(),
@@ -670,15 +701,19 @@ fn run_once(
         clear_env: plan.clear,
         timeout_seconds: context.config.run.timeout_seconds,
         log_limit_bytes: context.config.report.log_limit_bytes,
-        verbose: context.verbose,
-    })?;
-    let redactor = redactor_for(context.original_environment, context.source, &isolated);
-    Ok(Attempt::Evidence(oracle::evaluate(
-        raw,
-        &context.config.oracle,
-        project,
-        |text| redactor.redact(text),
-    )?))
+    })
+    .map_err(|error| redacted_error(error, &redactor))?;
+    isolated
+        .validate_boundary()
+        .map_err(|error| redacted_error(error, &redactor))?;
+    let evidence = oracle::evaluate(raw, &context.config.oracle, project, |text| {
+        redactor.redact(text)
+    })
+    .map_err(|error| redacted_error(error, &redactor))?;
+    if context.verbose {
+        emit_verbose_evidence(&evidence);
+    }
+    Ok(Attempt::Evidence(evidence))
 }
 
 fn run_tokens(
@@ -688,7 +723,6 @@ fn run_tokens(
     plan: &EnvironmentPlan,
     timeout_seconds: u64,
     log_limit_bytes: usize,
-    verbose: bool,
 ) -> Result<crate::model::RawExecution> {
     let command = resolve_command(source, tokens, &plan.values)?;
     let executable = command
@@ -702,18 +736,35 @@ fn run_tokens(
         clear_env: plan.clear,
         timeout_seconds,
         log_limit_bytes,
-        verbose,
     })
 }
 
-fn redactor_for(
-    environment: &BTreeMap<String, String>,
-    source: &Path,
-    isolated: &workspace::IsolatedWorkspace,
-) -> Redactor {
-    let mut redactor = Redactor::new(environment, source);
+fn redactor_for(base: &Redactor, isolated: &workspace::IsolatedWorkspace) -> Redactor {
+    let mut redactor = base.clone();
     redactor.add_temporary_root(isolated.temporary_root());
     redactor
+}
+
+fn redacted_error(error: anyhow::Error, redactor: &Redactor) -> anyhow::Error {
+    anyhow::anyhow!(redactor.redact(&format!("{error:#}")))
+}
+
+fn emit_verbose_evidence(evidence: &RunEvidence) {
+    let mut output = io::stderr().lock();
+    if !evidence.stdout_summary.is_empty() {
+        let _ = writeln!(
+            output,
+            "[tested command stdout]\n{}",
+            report::terminal_safe(&evidence.stdout_summary)
+        );
+    }
+    if !evidence.stderr_summary.is_empty() {
+        let _ = writeln!(
+            output,
+            "[tested command stderr]\n{}",
+            report::terminal_safe(&evidence.stderr_summary)
+        );
+    }
 }
 
 fn prepare_scenario_directories(kind: ScenarioKind, root: &Path) -> Result<()> {
@@ -826,27 +877,6 @@ fn timestamp() -> String {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or_else(|_| "0".into(), |value| value.as_secs().to_string())
-}
-
-fn redact_command_part(part: &str, redactor: &Redactor, project: &Path) -> String {
-    let path = Path::new(part);
-    if path.is_absolute() {
-        if let Ok(relative) = path.strip_prefix(project) {
-            return format!(
-                "<PROJECT>/{}",
-                relative.to_string_lossy().replace('\\', "/")
-            );
-        }
-    }
-    let redacted = redactor.redact(part);
-    if redacted != part || !path.is_absolute() {
-        return redacted;
-    }
-    format!(
-        "<ABSOLUTE_PATH>/{}",
-        path.file_name()
-            .map_or_else(|| "item".into(), |name| name.to_string_lossy())
-    )
 }
 
 #[cfg(test)]

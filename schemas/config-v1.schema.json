@@ -41,6 +41,7 @@
           "default": "working-tree"
         },
         "max_size_mib": { "type": "integer", "minimum": 1, "default": 2048 },
+        "max_entries": { "type": "integer", "minimum": 1, "default": 100000 },
         "exclude": {
           "type": "array",
           "items": { "type": "string" },
@@ -53,7 +54,7 @@
           "description": "Explicit relative untracked paths to copy in git-clean mode."
         },
         "allow_external_symlinks": { "type": "boolean", "default": false },
-        "deep_path_length": { "type": "integer", "minimum": 32, "default": 180 }
+        "deep_path_length": { "type": "integer", "minimum": 32, "maximum": 240, "default": 180 }
       }
     },
     "oracle": {
@@ -157,11 +158,21 @@
           },
           "default": ["terminal", "json"]
         },
-        "redact_home": { "type": "boolean", "default": true },
+        "redact_home": {
+          "const": true,
+          "default": true,
+          "description": "Mandatory in configuration v1: home-path redaction cannot be disabled."
+        },
         "log_limit_bytes": {
           "type": "integer",
           "minimum": 1024,
           "default": 131072
+        },
+        "sensitive_options": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^-{1,2}[^\\s=-][^\\s=]*$" },
+          "default": [],
+          "description": "Additional command options whose following or inline value is sensitive; configured single-character short options recognize -p value, -p=value, and -pVALUE."
         }
       }
     }
