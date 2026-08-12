@@ -175,7 +175,7 @@ Verified fixture transcripts for hidden environment variables, hidden child tool
 
 ## Privacy
 
-AssumeZero itself does not upload files, call external APIs, send telemetry, inspect the contents of the real home directory, or persist recognized secret values. Sensitive environment values and values of recognized long CLI options such as `--token`, `--password`, and `--api-key` are used only in memory to redact command/output evidence before it is written. Configure ambiguous short or custom options in `report.sensitive_options`. Reports contain names, presence/classification metadata, and redacted output summaries.
+AssumeZero itself does not upload files, call external APIs, send telemetry, inspect the contents of the real home directory, or persist recognized secret values. Sensitive environment values and values of recognized long CLI options such as `--token`, `--password`, and `--api-key` are used only in memory to redact command/output evidence before it is written. Configure ambiguous short or custom options in `report.sensitive_options`; a configured single-character short option covers `-p value`, `-p=value`, and `-pVALUE`. Reports contain names, presence/classification metadata, and redacted output summaries.
 
 User-provided preparation and tested commands can still access the network and other resources available to the current user. Redaction is defense in depth; pattern matching can have both false positives and false negatives.
 

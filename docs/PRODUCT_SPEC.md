@@ -32,6 +32,8 @@ assumezero report <run-id> --format markdown|json|junit
 
 Global options are `--verbose`, `--quiet`, `--no-color`, `--json`, and `--config <path>`.
 
+`--shell` remains trusted-input only. v0.1.0 refuses a single opaque script token; use multiple structured tokens, direct argv execution, or recognized environment variables when evidence may contain sensitive values.
+
 ## Baseline
 
 The default is two runs, each in a new project copy with the same command, source state, configuration, and original inherited environment. Every run must satisfy the oracle before attribution starts. Mixed accepted/rejected runs produce `BASELINE_UNSTABLE`; consistently rejected runs produce `BASELINE_FAILED`. `--strict-output` additionally requires identical redacted stdout/stderr summaries and exit codes.

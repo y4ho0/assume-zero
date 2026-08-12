@@ -190,6 +190,62 @@ fn clean_env_is_minimized_without_persisting_the_value() {
 }
 
 #[test]
+fn short_sensitive_environment_values_are_redacted_across_outputs_and_reports() {
+    let project = tempfile::tempdir().expect("project");
+    let config = write_config(project.path(), &all_scenarios(), "");
+    let secret_name = "AZ_SHORT_TOKEN";
+    let short_secret = "abc";
+    let exposed = "fixture-secret=abc";
+
+    let json_output = run(assumezero()
+        .current_dir(project.path())
+        .env(secret_name, short_secret)
+        .args([
+            "--json",
+            "--config",
+            config.to_str().expect("path"),
+            "check",
+            "--",
+            fixture(),
+            "secret-output",
+            secret_name,
+        ]));
+    assert!(json_output.status.success());
+    let report = parse_json(&json_output);
+    let rendered = format!(
+        "{}{}{}",
+        String::from_utf8_lossy(&json_output.stdout),
+        String::from_utf8_lossy(&json_output.stderr),
+        serde_json::to_string(&report).expect("report")
+    );
+    assert!(!rendered.contains(exposed), "{rendered}");
+    assert!(rendered.contains("fixture-secret=***"));
+    let run_id = report["run_id"].as_str().expect("run id");
+    let directory = project.path().join(".assumezero/runs").join(run_id);
+    assert!(!String::from_utf8_lossy(&scan_files(&directory)).contains(exposed));
+
+    let terminal_output = run(assumezero()
+        .current_dir(project.path())
+        .env(secret_name, short_secret)
+        .args([
+            "--config",
+            config.to_str().expect("path"),
+            "check",
+            "--",
+            fixture(),
+            "secret-output",
+            secret_name,
+        ]));
+    assert!(terminal_output.status.success());
+    let terminal = format!(
+        "{}{}",
+        String::from_utf8_lossy(&terminal_output.stdout),
+        String::from_utf8_lossy(&terminal_output.stderr)
+    );
+    assert!(!terminal.contains(exposed), "{terminal}");
+}
+
+#[test]
 fn empty_home_failure_is_confirmed() {
     let project = tempfile::tempdir().expect("project");
     let fake_home = tempfile::tempdir().expect("home");
@@ -480,6 +536,8 @@ fn cli_only_secrets_are_redacted_across_outputs_and_reports() {
     let sentinel_short = "AZ_INVALID_CLI_SHORT_4104";
     let sentinel_prepare = "AZ_INVALID_CLI_PREPARE_4105";
     let sentinel_github = "AZ_INVALID_CLI_GITHUB_4106";
+    let sentinel_attached_short = "AZ_INVALID_CLI_ATTACHED_SHORT_4107";
+    let attached_short = format!("-p{sentinel_attached_short}");
     let config_text = fs::read_to_string(&initial_config)
         .expect("config")
         .replace(
@@ -512,6 +570,7 @@ fn cli_only_secrets_are_redacted_across_outputs_and_reports() {
         &format!("--api-key={sentinel_api_key}"),
         "-p",
         sentinel_short,
+        attached_short.as_str(),
         "--github-token",
         sentinel_github,
         "--output",
@@ -567,6 +626,7 @@ fn cli_only_secrets_are_redacted_across_outputs_and_reports() {
             sentinel_short,
             sentinel_prepare,
             sentinel_github,
+            sentinel_attached_short,
         ] {
             assert!(!rendered.contains(sentinel));
         }
@@ -603,6 +663,7 @@ fn cli_only_secrets_are_redacted_across_outputs_and_reports() {
             sentinel_short,
             sentinel_prepare,
             sentinel_github,
+            sentinel_attached_short,
         ] {
             assert!(!rendered.contains(sentinel));
         }
@@ -642,6 +703,7 @@ fn cli_only_secrets_are_redacted_across_outputs_and_reports() {
         sentinel_short,
         sentinel_prepare,
         sentinel_github,
+        sentinel_attached_short,
     ] {
         assert!(!rendered.contains(sentinel));
     }
@@ -658,6 +720,7 @@ fn cli_only_secrets_are_redacted_across_outputs_and_reports() {
         sentinel_short,
         sentinel_prepare,
         sentinel_github,
+        sentinel_attached_short,
     ] {
         assert!(!persisted.contains(sentinel));
     }
@@ -692,6 +755,7 @@ fn cli_only_secrets_are_redacted_across_outputs_and_reports() {
         sentinel_short,
         sentinel_prepare,
         sentinel_github,
+        sentinel_attached_short,
     ] {
         assert!(!rendered.contains(sentinel));
     }
@@ -706,6 +770,7 @@ fn cli_only_secrets_are_redacted_across_outputs_and_reports() {
         sentinel_short,
         sentinel_prepare,
         sentinel_github,
+        sentinel_attached_short,
     ] {
         assert!(!shell_persisted.contains(sentinel));
     }
@@ -727,6 +792,7 @@ fn cli_only_secrets_are_redacted_across_outputs_and_reports() {
         sentinel_short,
         sentinel_prepare,
         sentinel_github,
+        sentinel_attached_short,
     ] {
         assert!(!terminal_rendered.contains(sentinel));
     }
@@ -749,6 +815,7 @@ fn cli_only_secrets_are_redacted_across_outputs_and_reports() {
         sentinel_short,
         sentinel_prepare,
         sentinel_github,
+        sentinel_attached_short,
     ] {
         assert!(!persisted.contains(sentinel));
     }
@@ -867,6 +934,63 @@ fn configuration_unknown_values_do_not_reintroduce_command_secrets() {
 }
 
 #[test]
+fn configuration_version_errors_do_not_reintroduce_command_secrets() {
+    let project = tempfile::tempdir().expect("project");
+    let sentinel = "918273645";
+    let config = project.path().join("invalid-version.toml");
+    fs::write(
+        &config,
+        format!("version = {sentinel}\n[run]\ncommand = [\"tool\", \"--token\", \"{sentinel}\"]\n"),
+    )
+    .expect("invalid config");
+    let output = run(assumezero().current_dir(project.path()).args([
+        "--config",
+        config.to_str().expect("path"),
+        "check",
+    ]));
+    assert_eq!(output.status.code(), Some(3));
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!rendered.contains(sentinel), "{rendered}");
+    assert!(rendered.contains("actual value suppressed"));
+}
+
+#[test]
+fn sensitive_values_do_not_reenter_through_project_paths() {
+    let project = tempfile::tempdir().expect("project");
+    let config = write_config(project.path(), &all_scenarios(), "");
+    let sentinel = "AZ_INVALID_SECRET_PATH_4304";
+    let absolute_secret_path = project.path().join(sentinel);
+    let output = run(assumezero().current_dir(project.path()).args([
+        "--json",
+        "--config",
+        config.to_str().expect("path"),
+        "check",
+        "--",
+        fixture(),
+        "echo-args",
+        "--token",
+        sentinel,
+        absolute_secret_path.to_str().expect("secret path"),
+    ]));
+    assert!(output.status.success());
+    let report = parse_json(&output);
+    let rendered = format!(
+        "{}{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+        serde_json::to_string(&report).expect("report")
+    );
+    assert!(!rendered.contains(sentinel), "{rendered}");
+    let run_id = report["run_id"].as_str().expect("run id");
+    let directory = project.path().join(".assumezero/runs").join(run_id);
+    assert!(!String::from_utf8_lossy(&scan_files(&directory)).contains(sentinel));
+}
+
+#[test]
 fn historical_report_regeneration_reapplies_builtin_redaction() {
     let project = tempfile::tempdir().expect("project");
     let sentinel = "AZ_INVALID_OLD_REPORT_4401";
@@ -886,6 +1010,18 @@ fn historical_report_regeneration_reapplies_builtin_redaction() {
     let directory = project.path().join(".assumezero/runs").join(&run_id);
     let mut historical = report;
     historical["command"] = serde_json::json!(["tool", "--token", sentinel]);
+    historical["tool_version"] = Value::String(sentinel.into());
+    historical["platform"]["os"] = Value::String(sentinel.into());
+    historical["platform"]
+        .as_object_mut()
+        .expect("platform")
+        .insert(sentinel.into(), Value::String("custom".into()));
+    historical["configuration"]["report_formats"] = serde_json::json!([sentinel]);
+    historical["redaction_summary"] = Value::Object(
+        [(sentinel.to_string(), Value::from(1))]
+            .into_iter()
+            .collect(),
+    );
     historical["workspace_integrity"]["note"] = Value::String(sentinel.into());
     historical["scenarios"] = serde_json::json!([{
         "id": "AZ-S001",
@@ -904,22 +1040,27 @@ fn historical_report_regeneration_reapplies_builtin_redaction() {
     )
     .expect("historical fixture");
 
-    let regenerated = run(assumezero().current_dir(project.path()).args([
-        "report",
-        run_id.as_str(),
-        "--format",
-        "markdown",
-    ]));
-    assert!(regenerated.status.success());
+    let mut regenerated_output = Vec::new();
+    for format in ["markdown", "junit", "json"] {
+        let regenerated = run(assumezero().current_dir(project.path()).args([
+            "report",
+            run_id.as_str(),
+            "--format",
+            format,
+        ]));
+        assert!(regenerated.status.success(), "{format}");
+        regenerated_output.extend(regenerated.stdout);
+        regenerated_output.extend(regenerated.stderr);
+    }
     let explained =
         run(assumezero()
             .current_dir(project.path())
             .args(["--json", "explain", run_id.as_str()]));
     assert!(explained.status.success());
-    let persisted = fs::read(directory.join("report.md")).expect("regenerated markdown");
+    let persisted = scan_files(&directory);
     let rendered = format!(
         "{}{}{}",
-        String::from_utf8_lossy(&regenerated.stdout),
+        String::from_utf8_lossy(&regenerated_output),
         String::from_utf8_lossy(&explained.stdout),
         String::from_utf8_lossy(&persisted)
     );
@@ -928,7 +1069,131 @@ fn historical_report_regeneration_reapplies_builtin_redaction() {
 }
 
 #[test]
-fn opaque_shell_script_is_hidden_from_display_and_persisted_command() {
+fn legacy_raw_shell_reports_are_refused_without_echoing_or_rewriting() {
+    let project = tempfile::tempdir().expect("project");
+    let sentinel = "AZ_INVALID_LEGACY_SHELL_4402";
+    let config = write_config(project.path(), &all_scenarios(), "");
+    let output = run(assumezero().current_dir(project.path()).args([
+        "--json",
+        "--config",
+        config.to_str().expect("path"),
+        "check",
+        "--",
+        fixture(),
+        "pass",
+    ]));
+    assert!(output.status.success());
+    let mut report = parse_json(&output);
+    let run_id = report["run_id"].as_str().expect("run id").to_owned();
+    let directory = project.path().join(".assumezero/runs").join(&run_id);
+    report["command"] = serde_json::json!([
+        "<ABSOLUTE_PATH>/sh",
+        "-c",
+        format!("echo --token {sentinel}")
+    ]);
+    report["baseline"][0]["stdout_summary"] = Value::String(sentinel.into());
+    let report_path = directory.join("report.json");
+    let raw = serde_json::to_vec_pretty(&report).expect("legacy raw shell report");
+    fs::write(&report_path, &raw).expect("replace report");
+    for artifact in ["report.md", "report.junit.xml"] {
+        let path = directory.join(artifact);
+        if path.exists() {
+            fs::remove_file(path).expect("remove prior artifact");
+        }
+    }
+
+    for arguments in [
+        vec!["explain", run_id.as_str()],
+        vec!["report", run_id.as_str(), "--format", "markdown"],
+        vec!["report", run_id.as_str(), "--format", "junit"],
+        vec!["report", run_id.as_str(), "--format", "json"],
+    ] {
+        let rejected = run(assumezero().current_dir(project.path()).args(arguments));
+        assert_eq!(rejected.status.code(), Some(3));
+        let rendered = format!(
+            "{}{}",
+            String::from_utf8_lossy(&rejected.stdout),
+            String::from_utf8_lossy(&rejected.stderr)
+        );
+        assert!(!rendered.contains(sentinel), "{rendered}");
+        assert!(rendered.contains("saved report contains a shell wrapper"));
+    }
+    assert_eq!(fs::read(&report_path).expect("original report"), raw);
+    assert!(!directory.join("report.md").exists());
+    assert!(!directory.join("report.junit.xml").exists());
+
+    report["command"] =
+        serde_json::json!(["<ABSOLUTE_PATH>/sh", "-c", "<REDACTED_OPAQUE_SHELL_SCRIPT>"]);
+    let marked = serde_json::to_vec_pretty(&report).expect("marked legacy shell report");
+    fs::write(&report_path, &marked).expect("replace marked report");
+    for arguments in [
+        vec!["explain", run_id.as_str()],
+        vec!["report", run_id.as_str(), "--format", "markdown"],
+        vec!["report", run_id.as_str(), "--format", "junit"],
+        vec!["report", run_id.as_str(), "--format", "json"],
+    ] {
+        let rejected = run(assumezero().current_dir(project.path()).args(arguments));
+        assert_eq!(rejected.status.code(), Some(3));
+        let rendered = format!(
+            "{}{}",
+            String::from_utf8_lossy(&rejected.stdout),
+            String::from_utf8_lossy(&rejected.stderr)
+        );
+        assert!(!rendered.contains(sentinel), "{rendered}");
+        assert!(!rendered.contains("REDACTED_OPAQUE_SHELL_SCRIPT"));
+    }
+    assert_eq!(fs::read(&report_path).expect("marked report"), marked);
+    assert!(!directory.join("report.md").exists());
+    assert!(!directory.join("report.junit.xml").exists());
+}
+
+#[test]
+fn explain_escapes_control_characters_from_saved_reports() {
+    let project = tempfile::tempdir().expect("project");
+    let config = write_config(project.path(), &all_scenarios(), "");
+    let output = run(assumezero().current_dir(project.path()).args([
+        "--json",
+        "--config",
+        config.to_str().expect("path"),
+        "check",
+        "--",
+        fixture(),
+        "pass",
+    ]));
+    assert!(output.status.success());
+    let mut report = parse_json(&output);
+    let run_id = report["run_id"].as_str().expect("run id").to_owned();
+    let directory = project.path().join(".assumezero/runs").join(&run_id);
+    report["findings"] = serde_json::json!([{
+        "id": "AZ-F001",
+        "scenario_id": "AZ-S001",
+        "evidence": "CONFIRMED",
+        "changed": "before\u{001b}]0;title\u{0007}after",
+        "observed": "ordinary",
+        "conclusion": "ordinary",
+        "next_step": "ordinary",
+        "not_proven": "ordinary",
+        "restored_names": []
+    }]);
+    fs::write(
+        directory.join("report.json"),
+        serde_json::to_vec_pretty(&report).expect("control report"),
+    )
+    .expect("replace report");
+
+    let explained = run(assumezero()
+        .current_dir(project.path())
+        .args(["explain", run_id.as_str()]));
+    assert!(explained.status.success());
+    assert!(!explained.stdout.contains(&0x1b));
+    assert!(!explained.stdout.contains(&0x07));
+    let rendered = String::from_utf8_lossy(&explained.stdout);
+    assert!(rendered.contains("[U+001B]"));
+    assert!(rendered.contains("[U+0007]"));
+}
+
+#[test]
+fn opaque_shell_scripts_are_refused_without_echoing_the_script() {
     let project = tempfile::tempdir().expect("project");
     let sentinel = "AZ_INVALID_OPAQUE_SHELL_4501";
     let config = write_config(project.path(), &all_scenarios(), "");
@@ -944,14 +1209,14 @@ fn opaque_shell_script_is_hidden_from_display_and_persisted_command() {
         "--",
         &script,
     ]));
-    assert!(dry_run.status.success());
+    assert_eq!(dry_run.status.code(), Some(3));
     let rendered = format!(
         "{}{}",
         String::from_utf8_lossy(&dry_run.stdout),
         String::from_utf8_lossy(&dry_run.stderr)
     );
     assert!(!rendered.contains(sentinel));
-    assert!(rendered.contains("REDACTED_OPAQUE_SHELL_SCRIPT"));
+    assert!(rendered.contains("single opaque `--shell` script is refused"));
 
     let check = run(assumezero().current_dir(project.path()).args([
         "--json",
@@ -962,9 +1227,12 @@ fn opaque_shell_script_is_hidden_from_display_and_persisted_command() {
         "--",
         &script,
     ]));
-    assert!(check.status.success());
-    let report = parse_json(&check);
-    let command = serde_json::to_string(&report["command"]).expect("command");
-    assert!(!command.contains(sentinel));
-    assert!(command.contains("REDACTED_OPAQUE_SHELL_SCRIPT"));
+    assert_eq!(check.status.code(), Some(3));
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(!rendered.contains(sentinel));
+    assert!(!project.path().join(".assumezero").exists());
 }

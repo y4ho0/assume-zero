@@ -8,13 +8,23 @@ use std::path::{Path, PathBuf};
 const MAX_SAVED_REPORT_BYTES: u64 = 64 * 1_048_576;
 
 pub fn persist(project: &Path, report: &Report, formats: &[String]) -> Result<PathBuf> {
-    validate_run_id(&report.run_id)?;
+    validate_report_contract(report)?;
     let json = serde_json::to_vec_pretty(report)?;
-    if json.len() as u64 > MAX_SAVED_REPORT_BYTES {
-        bail!(
-            "generated report exceeds the {} MiB persisted-report limit; reduce run or log budgets",
-            MAX_SAVED_REPORT_BYTES / 1_048_576
-        );
+    validate_artifact_size(json.len())?;
+    let markdown = formats
+        .iter()
+        .any(|format| format == "markdown")
+        .then(|| markdown(report).into_bytes());
+    if let Some(bytes) = &markdown {
+        validate_artifact_size(bytes.len())?;
+    }
+    let junit = formats
+        .iter()
+        .any(|format| format == "junit")
+        .then(|| junit(report))
+        .transpose()?;
+    if let Some(bytes) = &junit {
+        validate_artifact_size(bytes.len())?;
     }
     let runs = report_root(project, true)?;
     let directory = runs.join(&report.run_id);
@@ -32,11 +42,11 @@ pub fn persist(project: &Path, report: &Report, formats: &[String]) -> Result<Pa
         .context("staged report directory could not be resolved")?;
     ensure_contained(&runs, &staging_root, "staged report directory")?;
     write_new_file(&staging_root.join("report.json"), &json)?;
-    if formats.iter().any(|format| format == "markdown") {
-        write_new_file(&staging_root.join("report.md"), markdown(report).as_bytes())?;
+    if let Some(bytes) = &markdown {
+        write_new_file(&staging_root.join("report.md"), bytes)?;
     }
-    if formats.iter().any(|format| format == "junit") {
-        write_new_file(&staging_root.join("report.junit.xml"), &junit(report)?)?;
+    if let Some(bytes) = &junit {
+        write_new_file(&staging_root.join("report.junit.xml"), bytes)?;
     }
     fs::rename(staging.path(), &directory).with_context(|| {
         format!(
@@ -65,14 +75,14 @@ pub fn load(project: &Path, run_id: &str) -> Result<Report> {
             MAX_SAVED_REPORT_BYTES / 1_048_576
         );
     }
-    let report: Report =
-        serde_json::from_slice(&bytes).context("saved report is not valid report schema v1")?;
-    validate_run_id(&report.run_id).context("saved report contains an unsafe run ID")?;
+    let report: Report = serde_json::from_slice(&bytes).map_err(|_| {
+        anyhow::anyhow!(
+            "saved report is not valid report schema v1; parser details are suppressed because report fields may be sensitive"
+        )
+    })?;
+    validate_report_contract(&report)?;
     if report.run_id != run_id {
-        bail!(
-            "saved report run ID `{}` does not match requested run `{run_id}`",
-            report.run_id
-        );
+        bail!("saved report run ID does not match the requested run directory");
     }
     Ok(report)
 }
@@ -123,11 +133,11 @@ pub fn print_terminal(report: &Report, quiet: bool) {
             finding.id,
             finding.scenario_id,
             evidence_label(finding.evidence),
-            finding.changed,
-            finding.observed,
-            finding.conclusion,
-            finding.next_step,
-            finding.not_proven
+            escape_control_text(&finding.changed),
+            escape_control_text(&finding.observed),
+            escape_control_text(&finding.conclusion),
+            escape_control_text(&finding.next_step),
+            escape_control_text(&finding.not_proven)
         );
     }
     println!(
@@ -156,18 +166,20 @@ pub fn markdown(report: &Report) -> String {
         report.run_id,
         escape_markdown(&display_command(&report.command)),
         report.baseline_status,
-        report.platform.get("os").map_or("unknown", String::as_str),
-        report
-            .platform
-            .get("arch")
-            .map_or("unknown", String::as_str),
+        escape_markdown(report.platform.get("os").map_or("unknown", String::as_str)),
+        escape_markdown(
+            report
+                .platform
+                .get("arch")
+                .map_or("unknown", String::as_str)
+        ),
         report.workspace_integrity.source_unchanged,
     );
     for scenario in &report.scenarios {
         output.push_str(&format!(
             "| {} | {} | {:?} | {} | {} |\n",
             scenario.id,
-            scenario.name,
+            escape_markdown(&scenario.name),
             scenario.status,
             scenario.runs.len(),
             escape_markdown(&scenario.note)
@@ -188,11 +200,11 @@ pub fn markdown(report: &Report) -> String {
             finding.id,
             finding.scenario_id,
             evidence_label(finding.evidence),
-            finding.changed,
-            finding.observed,
-            finding.conclusion,
-            finding.next_step,
-            finding.not_proven
+            escape_markdown(&finding.changed),
+            escape_markdown(&finding.observed),
+            escape_markdown(&finding.conclusion),
+            escape_markdown(&finding.next_step),
+            escape_markdown(&finding.not_proven)
         ));
     }
     output.push_str("## Safety note\n\nAssumeZero ran the command in copied workspaces. This protects source files from direct command writes; it does not sandbox untrusted code or prevent network and other machine access.\n");
@@ -246,7 +258,7 @@ pub fn junit(report: &Report) -> Result<Vec<u8>> {
 }
 
 pub fn write_requested_format(project: &Path, report: &Report, format: &str) -> Result<PathBuf> {
-    validate_run_id(&report.run_id)?;
+    validate_report_contract(report)?;
     let directory = existing_run_directory(project, &report.run_id)?;
     let (path, bytes) = match format {
         "json" => (
@@ -257,14 +269,19 @@ pub fn write_requested_format(project: &Path, report: &Report, format: &str) -> 
         "junit" => (directory.join("report.junit.xml"), junit(report)?),
         other => anyhow::bail!("unsupported report format `{other}`"),
     };
-    if format == "json" && bytes.len() as u64 > MAX_SAVED_REPORT_BYTES {
+    validate_artifact_size(bytes.len())?;
+    atomic_write_regular(&directory, &path, &bytes)?;
+    Ok(path)
+}
+
+fn validate_artifact_size(bytes: usize) -> Result<()> {
+    if bytes as u64 > MAX_SAVED_REPORT_BYTES {
         bail!(
-            "generated report exceeds the {} MiB persisted-report limit; reduce run or log budgets",
+            "generated report artifact exceeds the {} MiB persisted-report limit; reduce run or log budgets",
             MAX_SAVED_REPORT_BYTES / 1_048_576
         );
     }
-    atomic_write_regular(&directory, &path, &bytes)?;
-    Ok(path)
+    Ok(())
 }
 
 fn validate_run_id(run_id: &str) -> Result<()> {
@@ -272,11 +289,84 @@ fn validate_run_id(run_id: &str) -> Result<()> {
         .parse::<ulid::Ulid>()
         .is_ok_and(|parsed| parsed.to_string() == run_id);
     if !valid_ulid || !platform::is_single_normal_component(run_id) {
-        bail!(
-            "run ID `{run_id}` must be a canonical 26-character ULID and one normal path component"
-        );
+        bail!("run ID must be a canonical 26-character ULID and one normal path component");
     }
     Ok(())
+}
+
+fn validate_report_contract(report: &Report) -> Result<()> {
+    if report.schema_version != 1 {
+        bail!("saved report uses an unsupported schema version; actual value suppressed");
+    }
+    validate_run_id(&report.run_id).context("saved report contains an unsafe run ID")?;
+    if !decimal_string(&report.started_at) || !decimal_string(&report.finished_at) {
+        bail!("saved report contains an invalid timestamp field; value suppressed");
+    }
+    if !report.platform.contains_key("os")
+        || !report.platform.contains_key("arch")
+        || !report.platform.contains_key("family")
+    {
+        bail!("saved report is missing required platform fields");
+    }
+    if !lower_hex_64(&report.repository_fingerprint) {
+        bail!("saved report contains an invalid repository fingerprint");
+    }
+    if !matches!(report.configuration.profile.as_str(), "quick" | "deep")
+        || report.configuration.timeout_seconds == 0
+        || report.configuration.baseline_runs < 2
+        || report.configuration.confirm_failures == 0
+        || !matches!(
+            report.configuration.workspace_mode.as_str(),
+            "working-tree" | "git-clean"
+        )
+    {
+        bail!("saved report contains invalid configuration metadata; values suppressed");
+    }
+    if report.command.is_empty() {
+        bail!("saved report command must not be empty");
+    }
+    if !matches!(
+        report.baseline_status.as_str(),
+        "STABLE" | "BASELINE_FAILED" | "BASELINE_UNSTABLE"
+    ) {
+        bail!("saved report contains an invalid baseline status; value suppressed");
+    }
+    for scenario in &report.scenarios {
+        if !stable_id(&scenario.id, "AZ-S") {
+            bail!("saved report contains an invalid scenario ID; value suppressed");
+        }
+    }
+    for finding in &report.findings {
+        if !stable_id(&finding.id, "AZ-F") || !stable_id(&finding.scenario_id, "AZ-S") {
+            bail!("saved report contains an invalid finding ID; value suppressed");
+        }
+    }
+    if report.budget.max_total_runs == 0 || report.budget.max_total_seconds == 0 {
+        bail!("saved report contains invalid execution-budget metadata");
+    }
+    if !lower_hex_64(&report.workspace_integrity.before_fingerprint)
+        || !lower_hex_64(&report.workspace_integrity.after_fingerprint)
+    {
+        bail!("saved report contains an invalid workspace fingerprint");
+    }
+    Ok(())
+}
+
+fn decimal_string(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn lower_hex_64(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
+fn stable_id(value: &str, prefix: &str) -> bool {
+    value
+        .strip_prefix(prefix)
+        .is_some_and(|suffix| suffix.len() == 3 && suffix.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 fn report_root(project: &Path, create: bool) -> Result<PathBuf> {
@@ -425,11 +515,11 @@ pub fn explain(report: &Report) -> String {
             "{} ({})\nChanged: {}\nObserved: {}\nConclusion: {}\nNext: {}\nNot proven: {}\n\n",
             finding.scenario_id,
             evidence_label(finding.evidence),
-            finding.changed,
-            finding.observed,
-            finding.conclusion,
-            finding.next_step,
-            finding.not_proven
+            escape_control_text(&finding.changed),
+            escape_control_text(&finding.observed),
+            escape_control_text(&finding.conclusion),
+            escape_control_text(&finding.next_step),
+            escape_control_text(&finding.not_proven)
         ));
     }
     output
@@ -462,10 +552,11 @@ fn display_command(command: &[String]) -> String {
     command
         .iter()
         .map(|part| {
-            if part.chars().any(char::is_whitespace) {
-                format!("{part:?}")
+            let safe = escape_control_text(part);
+            if safe.chars().any(char::is_whitespace) {
+                format!("{safe:?}")
             } else {
-                part.clone()
+                safe
             }
         })
         .collect::<Vec<_>>()
@@ -473,16 +564,44 @@ fn display_command(command: &[String]) -> String {
 }
 
 fn escape_markdown(input: &str) -> String {
-    input.replace('|', "\\|").replace('\n', " ")
+    escape_control_text(input).replace('|', "\\|")
 }
 
 fn xml_escape(input: &str) -> String {
-    input
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
+    let safe = escape_control_text(input);
+    let mut output = String::with_capacity(safe.len());
+    for character in safe.chars() {
+        match character {
+            '&' => output.push_str("&amp;"),
+            '<' => output.push_str("&lt;"),
+            '>' => output.push_str("&gt;"),
+            '"' => output.push_str("&quot;"),
+            '\'' => output.push_str("&apos;"),
+            _ if xml_10_character(character) => output.push(character),
+            _ => output.push_str(&format!("[U+{:04X}]", character as u32)),
+        }
+    }
+    output
+}
+
+fn escape_control_text(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    for character in input.chars() {
+        if character.is_control() {
+            output.push_str(&format!("[U+{:04X}]", character as u32));
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
+pub(crate) fn terminal_safe(input: &str) -> String {
+    escape_control_text(input)
+}
+
+const fn xml_10_character(character: char) -> bool {
+    matches!(character as u32, 0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF)
 }
 
 const fn evidence_label(level: EvidenceLevel) -> &'static str {
@@ -508,8 +627,12 @@ mod tests {
             run_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".into(),
             started_at: "0".into(),
             finished_at: "1".into(),
-            platform: BTreeMap::new(),
-            repository_fingerprint: "abc".into(),
+            platform: BTreeMap::from([
+                ("os".into(), "test".into()),
+                ("arch".into(), "test".into()),
+                ("family".into(), "test".into()),
+            ]),
+            repository_fingerprint: "0".repeat(64),
             configuration: ReportConfiguration {
                 source: "defaults".into(),
                 profile: "quick".into(),
@@ -543,8 +666,8 @@ mod tests {
             },
             redaction_summary: BTreeMap::new(),
             workspace_integrity: IntegrityEvidence {
-                before_fingerprint: "a".into(),
-                after_fingerprint: "a".into(),
+                before_fingerprint: "a".repeat(64),
+                after_fingerprint: "a".repeat(64),
                 source_unchanged: true,
                 git_status_before: None,
                 git_status_after: None,
@@ -577,6 +700,57 @@ mod tests {
     }
 
     #[test]
+    fn human_renderers_make_control_characters_visible() {
+        let mut report = sample_report(ScenarioStatus::Fail);
+        let injected = "before\u{1b}]0;title\u{7}after\nforged";
+        report.command = vec![injected.into()];
+        report.scenarios[0].name = injected.into();
+        report.scenarios[0].note = injected.into();
+        report.findings.push(crate::model::Finding {
+            id: "AZ-F001".into(),
+            scenario_id: "AZ-S001".into(),
+            evidence: EvidenceLevel::Confirmed,
+            changed: injected.into(),
+            observed: injected.into(),
+            conclusion: injected.into(),
+            next_step: injected.into(),
+            not_proven: injected.into(),
+            restored_names: vec![],
+        });
+
+        let explanation = explain(&report);
+        let markdown = markdown(&report);
+        for rendered in [explanation, markdown] {
+            assert!(!rendered.contains('\u{1b}'));
+            assert!(!rendered.contains('\u{7}'));
+            assert!(rendered.contains("[U+001B]"));
+            assert!(rendered.contains("[U+0007]"));
+            assert!(rendered.contains("[U+000A]"));
+        }
+        let command = display_command(&report.command);
+        assert!(!command.contains('\u{1b}'));
+        assert!(command.contains("[U+001B]"));
+    }
+
+    #[test]
+    fn junit_replaces_non_xml_control_characters() {
+        let mut report = sample_report(ScenarioStatus::Fail);
+        report.scenarios[0].name = "nul\0 one\u{1} esc\u{1b} c1\u{85} bad\u{fffe}".into();
+        let xml = String::from_utf8(junit(&report).expect("junit")).expect("UTF-8");
+        assert!(!xml.contains('\0'));
+        assert!(!xml.contains('\u{1}'));
+        assert!(!xml.contains('\u{1b}'));
+        assert!(!xml.contains('\u{85}'));
+        assert!(!xml.contains('\u{fffe}'));
+        assert!(xml.contains("[U+0000]"));
+        assert!(xml.contains("[U+0001]"));
+        assert!(xml.contains("[U+001B]"));
+        assert!(xml.contains("[U+0085]"));
+        assert!(xml.contains("[U+FFFE]"));
+        assert!(xml.chars().all(xml_10_character));
+    }
+
+    #[test]
     fn run_ids_must_be_one_portable_normal_component() {
         let project = tempfile::tempdir().expect("project");
         for invalid in [
@@ -599,6 +773,12 @@ mod tests {
     }
 
     #[test]
+    fn every_generated_report_artifact_uses_the_same_size_limit() {
+        assert!(validate_artifact_size(MAX_SAVED_REPORT_BYTES as usize).is_ok());
+        assert!(validate_artifact_size(MAX_SAVED_REPORT_BYTES as usize + 1).is_err());
+    }
+
+    #[test]
     fn loaded_report_id_must_match_requested_directory() {
         let project = tempfile::tempdir().expect("project");
         let report = sample_report(ScenarioStatus::Pass);
@@ -611,6 +791,50 @@ mod tests {
         )
         .expect("replace fixture");
         assert!(load(project.path(), "01ARZ3NDEKTSV4RRFFQ69G5FAV").is_err());
+    }
+
+    #[test]
+    fn loaded_reports_reject_invalid_contracts_without_echoing_values() {
+        let project = tempfile::tempdir().expect("project");
+        let report = sample_report(ScenarioStatus::Pass);
+        let directory = persist(project.path(), &report, &["json".into()]).expect("persist");
+        let path = directory.join("report.json");
+
+        let mut unsupported = serde_json::to_value(&report).expect("value");
+        unsupported["schema_version"] = serde_json::json!(918273645);
+        fs::write(
+            &path,
+            serde_json::to_vec_pretty(&unsupported).expect("json"),
+        )
+        .expect("replace fixture");
+        let error = load(project.path(), &report.run_id)
+            .expect_err("unsupported schema version")
+            .to_string();
+        assert!(!error.contains("918273645"));
+
+        let mut unknown = serde_json::to_value(&report).expect("value");
+        unknown["AZ_INVALID_UNKNOWN_REPORT_FIELD_5511"] = serde_json::json!(true);
+        fs::write(&path, serde_json::to_vec_pretty(&unknown).expect("json"))
+            .expect("replace fixture");
+        let error = load(project.path(), &report.run_id)
+            .expect_err("unknown report field")
+            .to_string();
+        assert!(!error.contains("AZ_INVALID_UNKNOWN_REPORT_FIELD_5511"));
+        assert!(error.contains("parser details are suppressed"));
+
+        let mut nested_unknown = serde_json::to_value(&report).expect("value");
+        nested_unknown["configuration"]["AZ_INVALID_NESTED_REPORT_FIELD_5512"] =
+            serde_json::json!(true);
+        fs::write(
+            &path,
+            serde_json::to_vec_pretty(&nested_unknown).expect("json"),
+        )
+        .expect("replace fixture");
+        let error = load(project.path(), &report.run_id)
+            .expect_err("nested unknown report field")
+            .to_string();
+        assert!(!error.contains("AZ_INVALID_NESTED_REPORT_FIELD_5512"));
+        assert!(error.contains("parser details are suppressed"));
     }
 
     #[cfg(unix)]

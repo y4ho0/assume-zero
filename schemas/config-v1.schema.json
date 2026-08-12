@@ -158,7 +158,11 @@
           },
           "default": ["terminal", "json"]
         },
-        "redact_home": { "type": "boolean", "default": true },
+        "redact_home": {
+          "const": true,
+          "default": true,
+          "description": "Mandatory in configuration v1: home-path redaction cannot be disabled."
+        },
         "log_limit_bytes": {
           "type": "integer",
           "minimum": 1024,
@@ -168,7 +172,7 @@
           "type": "array",
           "items": { "type": "string", "pattern": "^-{1,2}[^\\s=-][^\\s=]*$" },
           "default": [],
-          "description": "Additional command options whose following or inline value is sensitive; intended especially for ambiguous short options."
+          "description": "Additional command options whose following or inline value is sensitive; configured single-character short options recognize -p value, -p=value, and -pVALUE."
         }
       }
     }

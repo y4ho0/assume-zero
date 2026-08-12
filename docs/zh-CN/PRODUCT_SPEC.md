@@ -32,6 +32,8 @@ assumezero report <run-id> --format markdown|json|junit
 
 全局选项为 `--verbose`、`--quiet`、`--no-color`、`--json` 和 `--config <path>`。
 
+`--shell` 仍只适用于受信任输入。v0.1.0 会拒绝单个不透明脚本 Token；当证据可能包含敏感值时，请使用多个结构化 Token、直接 argv 执行或已识别的环境变量。
+
 ## 基线
 
 默认运行两次，每次使用一个新的项目副本，并保持命令、源状态、配置和最初继承的环境一致。开始归因之前，每次运行都必须满足 Oracle。接受/拒绝混合的结果会产生 `BASELINE_UNSTABLE`；持续拒绝会产生 `BASELINE_FAILED`。`--strict-output` 还要求脱敏后的 stdout/stderr 摘要和退出码完全相同。

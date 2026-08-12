@@ -103,9 +103,11 @@ pub fn run_cli() -> Result<u8> {
         Ok(code) => Ok(code),
         Err(error) => {
             let rendered = env::current_dir().ok().map_or_else(
-                || format!("{error:#}"),
+                || report::terminal_safe(&format!("{error:#}")),
                 |project| {
-                    Redactor::new(&env::vars().collect(), &project).redact(&format!("{error:#}"))
+                    let redacted = Redactor::new(&env::vars().collect(), &project)
+                        .redact(&format!("{error:#}"));
+                    report::terminal_safe(&redacted)
                 },
             );
             eprintln!("AssumeZero could not use the requested configuration or command.");
@@ -130,7 +132,7 @@ fn execute(cli: Cli) -> Result<u8> {
         }
         Commands::Explain { run_id } => {
             let mut saved = report::load(&current, &run_id)?;
-            redact_loaded_report(&current, &mut saved);
+            redact_loaded_report(&current, &mut saved)?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&saved.findings)?);
             } else {
@@ -140,11 +142,17 @@ fn execute(cli: Cli) -> Result<u8> {
         }
         Commands::Report { run_id, format } => {
             let mut saved = report::load(&current, &run_id)?;
-            redact_loaded_report(&current, &mut saved);
+            redact_loaded_report(&current, &mut saved)?;
             let path = report::write_requested_format(&current, &saved, format.as_str())?;
             println!(
                 "Wrote <PROJECT>/{}",
-                path.strip_prefix(&current).unwrap_or(&path).display()
+                report::terminal_safe(
+                    &path
+                        .strip_prefix(&current)
+                        .unwrap_or(&path)
+                        .display()
+                        .to_string()
+                )
             );
             Ok(0)
         }
@@ -180,7 +188,11 @@ fn execute(cli: Cli) -> Result<u8> {
                 );
             }
             let logical_command = final_command.clone();
-            let opaque_shell_script = shell && logical_command.len() == 1;
+            if shell && logical_command.len() == 1 {
+                anyhow::bail!(
+                    "a single opaque `--shell` script is refused because its CLI secret values cannot be redacted reliably; pass a structured argument vector without `--shell`, or move sensitive values into recognized environment variables"
+                );
+            }
             if shell {
                 let script = if final_command.len() == 1 {
                     final_command.remove(0)
@@ -209,19 +221,21 @@ fn execute(cli: Cli) -> Result<u8> {
             config.validate()?;
             let command_redactor =
                 redactor_for_commands(&config, &current, &final_command, &logical_command);
-            let redacted_command = if opaque_shell_script {
-                redact_opaque_shell_command(&final_command)
-            } else {
-                command_redactor.redact_command(&final_command)
-            };
+            let redacted_command = command_redactor.redact_command(&final_command);
             let redacted_source = command_redactor.redact(&source);
             if dry_run {
                 dry_run_summary(&config, &redacted_source, &redacted_command, cli.json);
                 return Ok(0);
             }
             if !cli.quiet {
-                eprintln!("Final command: {}", redacted_command.join(" "));
-                eprintln!("Configuration source: {redacted_source}");
+                eprintln!(
+                    "Final command: {}",
+                    report::terminal_safe(&redacted_command.join(" "))
+                );
+                eprintln!(
+                    "Configuration source: {}",
+                    report::terminal_safe(&redacted_source)
+                );
             }
             let output = engine::check(
                 &current,
@@ -229,7 +243,6 @@ fn execute(cli: Cli) -> Result<u8> {
                 &redacted_source,
                 &final_command,
                 &logical_command,
-                opaque_shell_script,
                 cli.verbose,
             )
             .map_err(|error| anyhow::anyhow!(command_redactor.redact(&format!("{error:#}"))))?;
@@ -240,11 +253,14 @@ fn execute(cli: Cli) -> Result<u8> {
                 if !cli.quiet {
                     println!(
                         "Evidence: <PROJECT>/{}",
-                        output
-                            .directory
-                            .strip_prefix(&current)
-                            .unwrap_or(&output.directory)
-                            .display()
+                        report::terminal_safe(
+                            &output
+                                .directory
+                                .strip_prefix(&current)
+                                .unwrap_or(&output.directory)
+                                .display()
+                                .to_string()
+                        )
                     );
                 }
             }
@@ -291,18 +307,38 @@ fn redactor_for_commands(
     redactor
 }
 
-fn redact_loaded_report(project: &Path, report: &mut crate::model::Report) {
+fn redact_loaded_report(project: &Path, report: &mut crate::model::Report) -> Result<()> {
+    reject_raw_opaque_shell_report(&report.command)?;
     let mut redactor = Redactor::new(&env::vars().collect(), project);
     redactor.add_commands([report.command.as_slice()], &[]);
-    redactor.redact_report(report);
+    redactor.redact_loaded_report(report);
+    Ok(())
 }
 
-fn redact_opaque_shell_command(command: &[String]) -> Vec<String> {
-    let mut redacted = command.to_vec();
-    if let Some(script) = redacted.last_mut() {
-        *script = "<REDACTED_OPAQUE_SHELL_SCRIPT>".into();
+fn reject_raw_opaque_shell_report(command: &[String]) -> Result<()> {
+    if is_shell_wrapper(command) {
+        anyhow::bail!(
+            "saved report contains a shell wrapper whose historical output cannot be redacted reliably and therefore cannot be rendered safely; command details are suppressed"
+        );
     }
-    redacted
+    Ok(())
+}
+
+fn is_shell_wrapper(command: &[String]) -> bool {
+    let Some(executable) = command.first() else {
+        return false;
+    };
+    let basename = executable
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(executable)
+        .to_ascii_lowercase();
+    (basename == "sh" && command.len() == 3 && command[1] == "-c")
+        || (command.len() == 5
+            && command[1..4]
+                .iter()
+                .zip(["/d", "/s", "/c"])
+                .all(|(actual, expected)| actual.eq_ignore_ascii_case(expected)))
 }
 
 fn init(path: &Path, force: bool, json_output: bool) -> Result<u8> {
@@ -321,7 +357,10 @@ fn init(path: &Path, force: bool, json_output: bool) -> Result<u8> {
     if json_output {
         println!("{}", json!({"created": path, "overwritten": force}));
     } else {
-        println!("Created {}", path.display());
+        println!(
+            "Created {}",
+            report::terminal_safe(&path.display().to_string())
+        );
         println!("Next: edit [run].command, then run `assumezero doctor`.");
     }
     Ok(0)
@@ -483,8 +522,11 @@ fn dry_run_summary(config: &Config, source: &str, command: &[String], json_outpu
         );
     } else {
         println!("AssumeZero dry run\n");
-        println!("Final command: {}", command.join(" "));
-        println!("Configuration source: {source}");
+        println!(
+            "Final command: {}",
+            report::terminal_safe(&command.join(" "))
+        );
+        println!("Configuration source: {}", report::terminal_safe(source));
         println!("Profile: {}", config.scenarios.profile);
         println!("Baseline runs: {}", config.run.baseline_runs);
         println!("Scenarios: {}", selected.join(", "));
@@ -513,5 +555,52 @@ mod tests {
             cli
         };
         assert_eq!(final_command, vec!["cli"]);
+    }
+
+    #[test]
+    fn legacy_opaque_shell_wrappers_are_detected_portably() {
+        for command in [
+            vec!["/bin/sh", "-c", "raw"],
+            vec!["<ABSOLUTE_PATH>/sh", "-c", "raw"],
+            vec![r"C:\Windows\System32\cmd.exe", "/D", "/S", "/C", "raw"],
+            vec!["<ABSOLUTE_PATH>/cmd.exe", "/d", "/s", "/c", "raw"],
+            vec![
+                "<ABSOLUTE_PATH>/custom-comspec.exe",
+                "/D",
+                "/S",
+                "/C",
+                "raw",
+            ],
+        ] {
+            let command = command.into_iter().map(String::from).collect::<Vec<_>>();
+            assert!(is_shell_wrapper(&command), "{command:?}");
+        }
+        for command in [
+            vec!["bash", "-c", "raw"],
+            vec!["sh", "-lc", "raw"],
+            vec!["sh", "script.sh"],
+            vec!["cmd.exe", "/S", "/C", "raw"],
+            vec!["tool", "-c", "ordinary"],
+        ] {
+            let command = command.into_iter().map(String::from).collect::<Vec<_>>();
+            assert!(!is_shell_wrapper(&command), "{command:?}");
+        }
+
+        let sentinel = "AZ_INVALID_LEGACY_SHELL_UNIT_7712";
+        let raw = ["<ABSOLUTE_PATH>/sh", "-c", sentinel]
+            .map(String::from)
+            .to_vec();
+        let error = reject_raw_opaque_shell_report(&raw)
+            .expect_err("raw shell report must be refused")
+            .to_string();
+        assert!(!error.contains(sentinel));
+
+        let redacted = ["<ABSOLUTE_PATH>/sh", "-c", "<REDACTED_OPAQUE_SHELL_SCRIPT>"]
+            .map(String::from)
+            .to_vec();
+        let error = reject_raw_opaque_shell_report(&redacted)
+            .expect_err("historical output remains untrusted even with a redacted command")
+            .to_string();
+        assert!(!error.contains("REDACTED_OPAQUE_SHELL_SCRIPT"));
     }
 }

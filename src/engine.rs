@@ -102,7 +102,6 @@ pub fn check(
     config_source: &str,
     command_tokens: &[String],
     logical_command_tokens: &[String],
-    opaque_shell_script: bool,
     verbose: bool,
 ) -> Result<EngineOutput> {
     config.validate()?;
@@ -204,15 +203,7 @@ pub fn check(
             workspace_mode: config.workspace.mode.as_str().into(),
             report_formats: config.report.formats.clone(),
         },
-        command: if opaque_shell_script {
-            let mut display = command.display.clone();
-            if let Some(script) = display.last_mut() {
-                *script = "<REDACTED_OPAQUE_SHELL_SCRIPT>".into();
-            }
-            display
-        } else {
-            base_redactor.redact_command(&command.display)
-        },
+        command: base_redactor.redact_command(&command.display),
         baseline,
         baseline_status,
         scenarios: scenario_results,
@@ -220,6 +211,10 @@ pub fn check(
         budget: budget.evidence(),
         redaction_summary: BTreeMap::from([
             ("in_memory_rules".into(), base_redactor.rule_count()),
+            (
+                "literal_rule_budget_exhausted".into(),
+                usize::from(base_redactor.rule_budget_exhausted()),
+            ),
             ("persisted_environment_values".into(), 0),
             ("persisted_cli_sensitive_values".into(), 0),
         ]),
@@ -760,14 +755,14 @@ fn emit_verbose_evidence(evidence: &RunEvidence) {
         let _ = writeln!(
             output,
             "[tested command stdout]\n{}",
-            evidence.stdout_summary
+            report::terminal_safe(&evidence.stdout_summary)
         );
     }
     if !evidence.stderr_summary.is_empty() {
         let _ = writeln!(
             output,
             "[tested command stderr]\n{}",
-            evidence.stderr_summary
+            report::terminal_safe(&evidence.stderr_summary)
         );
     }
 }

@@ -759,7 +759,7 @@ mod tests {
     }
 
     #[test]
-    fn budget_is_rejected_before_destination_mutation() {
+    fn byte_budget_is_rejected_during_preflight() {
         let source = tempfile::tempdir().expect("source");
         fs::write(source.path().join("small"), "small").expect("write");
         let large = File::create(source.path().join("large")).expect("large");
@@ -773,9 +773,6 @@ mod tests {
             &config,
         );
         assert!(result.is_err());
-
-        let root = tempfile::tempdir().expect("destination root");
-        assert!(!root.path().join("project").exists());
     }
 
     #[test]

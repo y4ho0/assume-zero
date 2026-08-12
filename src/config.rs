@@ -304,10 +304,7 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         if self.version != 1 {
-            bail!(
-                "unsupported configuration field `version = {}`; use `version = 1`",
-                self.version
-            );
+            bail!("unsupported configuration field `version`; actual value suppressed because configuration values may be sensitive. Use `version = 1`");
         }
         if self.run.timeout_seconds == 0 {
             bail!("field `run.timeout_seconds` must be at least 1");
@@ -394,6 +391,11 @@ impl Config {
                     "field `report.formats[{index}]` contains an unsupported format; value suppressed because configuration values may be sensitive. Choose terminal, json, markdown, or junit"
                 );
             }
+        }
+        if !self.report.redact_home {
+            bail!(
+                "field `report.redact_home` must be true in configuration v1; home-path redaction is a mandatory privacy boundary"
+            );
         }
         if self.report.log_limit_bytes < 1_024 {
             bail!("field `report.log_limit_bytes` must be at least 1024");
@@ -515,6 +517,13 @@ mod tests {
     fn invalid_regex_is_rejected_before_execution() {
         let mut config = Config::default();
         config.oracle.stdout_regex = Some("(".into());
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn home_path_redaction_cannot_be_disabled() {
+        let mut config = Config::default();
+        config.report.redact_home = false;
         assert!(config.validate().is_err());
     }
 

@@ -31,6 +31,8 @@ Schema v1 中，`started_at` 和 `finished_at` 是 Unix Epoch 秒数字符串，
 
 `run_id` 是规范的 26 字符 ULID，同时也是可移植的单一路径组件。仓库和工作区指纹是不透明、与版本相关的完整性证据，只用于同一次运行的前后比较；不要跨 AssumeZero 版本比较。`git_status_before` 和 `git_status_after` 可能包含旧版 v1 报告的 porcelain 文本，或加固构建生成的 `sha256:` 摘要；新报告只持久化摘要，避免仓库路径名称重新进入证据。
 
+执行 `explain` 或重新生成报告之前，AssumeZero 会再次校验已保存的 v1 结构。不受支持的版本、无效必填值以及所有固定结构对象中的未知字段（包括嵌套的运行、场景和发现结构）都会被拒绝。由于已保存报告不受信任且可能包含秘密，错误不会回显解析器详情或违规值。
+
 环境变量值不会出现在 Schema 的任何字段中。已识别或已配置的敏感 CLI 选项值会在构造 `command` 字段之前被替换。`restored_names` 只包含变量名或脱敏、规范化后的 `PATH` 条目。捕获输出及适用的 Oracle 详情会在构造 Report 前完成有界处理和脱敏；捕获输出带有 `output_truncated` 标志。
 
 使用方必须：

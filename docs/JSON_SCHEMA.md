@@ -31,6 +31,8 @@ workspace_integrity
 
 `run_id` is a canonical 26-character ULID and a portable single path component. Repository and workspace fingerprints are opaque, version-dependent integrity evidence intended for before/after comparison within the same run; do not compare values across AssumeZero versions. `git_status_before` and `git_status_after` may contain legacy porcelain text from older v1 reports or a `sha256:` digest from hardened builds; new reports persist only the digest so repository path names do not re-enter evidence.
 
+Before `explain` or report regeneration, AssumeZero revalidates the saved v1 structure. It rejects unsupported versions, invalid required values, and unknown fields in every fixed-shape object, including nested run, scenario, and finding structures. Parser details and offending values are suppressed because saved reports are untrusted and may contain secrets.
+
 Environment-variable values are not fields anywhere in the schema. Recognized or configured sensitive CLI option values are replaced before the `command` field is constructed. `restored_names` contains variable names or redacted normalized `PATH` entries. Captured output and Oracle details are bounded where applicable and redacted before Report construction; captured output carries an `output_truncated` flag.
 
 Consumers must:
