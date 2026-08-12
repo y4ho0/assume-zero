@@ -9,9 +9,9 @@ Every scenario has a stable ID, description, quick/deep profile membership, plat
 - `AZ-S001 EMPTY_HOME`: redirects the applicable home, profile, config, and data variables to an empty directory. It never lists or copies the real home. v0.1.0 does not trace a specific missing file.
 - `AZ-S002 EMPTY_CACHE`: redirects `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, and `GRADLE_USER_HOME`. It never deletes real caches and does not guess Maven cache options.
 - `AZ-S003 CLEAN_ENV`: preserves platform essentials plus `[environment].preserve`. Stable failure, full recovery, and a completed `ddmin` can produce a `PROVEN` variable-name set.
-- `AZ-S005 SPACE_WORKDIR`: copies into `AssumeZero Test Workspace/project copy`.
+- `AZ-S005 SPACE_WORKDIR`: copies into the single-component workspace name `AssumeZero Test Workspace project copy`.
 - `AZ-S006 UNICODE_WORKDIR`: copies into `项目-测试-Δ`; inability to create or use the path is `SKIPPED_UNSUPPORTED`.
-- `AZ-S007 DEEP_WORKDIR`: uses a configurable, safely bounded target length and does not deliberately exceed documented OS limits.
+- `AZ-S007 DEEP_WORKDIR`: uses a configurable, safely bounded long workspace-name component. The value is limited to 240 ASCII bytes and does not deliberately exceed common per-component filesystem limits.
 - `AZ-S008 REDIRECTED_TEMP`: redirects `TMP`, `TEMP`, and `TMPDIR` to a scenario-owned directory.
 
 ## Deep

@@ -3,6 +3,37 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+pub fn is_portable_relative_path(path: &Path) -> bool {
+    if path.as_os_str().is_empty()
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return false;
+    }
+
+    let encoded = path.as_os_str().as_encoded_bytes();
+    let drive_prefixed =
+        encoded.len() >= 2 && encoded[0].is_ascii_alphabetic() && encoded[1] == b':';
+    #[cfg(not(windows))]
+    let contains_foreign_separator = encoded.contains(&b'\\');
+    #[cfg(windows)]
+    let contains_foreign_separator = false;
+
+    !drive_prefixed && !contains_foreign_separator
+}
+
+pub fn is_single_normal_component(value: &str) -> bool {
+    let path = Path::new(value);
+    let mut components = path.components();
+    let exactly_one_normal = matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.next().is_none();
+    let bytes = value.as_bytes();
+    let drive_prefixed = bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
+    exactly_one_normal && !value.is_empty() && !value.contains(['/', '\\']) && !drive_prefixed
+}
+
 pub fn facts() -> BTreeMap<String, String> {
     BTreeMap::from([
         ("os".into(), env::consts::OS.into()),

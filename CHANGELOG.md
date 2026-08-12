@@ -10,6 +10,15 @@ All notable changes are documented here. The format follows Keep a Changelog, an
 
 - Complete Simplified Chinese documentation with bidirectional navigation and automated coverage/link checks.
 
+### Security
+
+- Reject workspace paths that escape through intermediate symlinks, unsafe workspace names, destination ancestors, or file-Oracle symlinks.
+- Reject report run-ID traversal and report-root/output symlink escapes; stage report files before publication and apply the same 64 MiB limit to generated and loaded JSON reports.
+- Preflight workspace byte and entry budgets before destination mutation, preserve Git path bytes on Unix, and stream source fingerprinting.
+- Frame raw platform path bytes in source fingerprints and persist Git status as a SHA-256 digest; integrity hashes are version-specific rather than cross-version identifiers.
+- Redact sensitive CLI option values consistently in command displays, verbose output, JSON, Markdown, Oracle details, and persisted evidence.
+- Bound `deep_path_length` to 240 bytes so generated workspace names remain one portable component; configurations above that limit now fail validation.
+
 ## [0.1.0] - 2026-07-27
 
 ### Added

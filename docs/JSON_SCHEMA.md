@@ -29,7 +29,9 @@ workspace_integrity
 
 `started_at` and `finished_at` are Unix epoch-second strings in schema v1. Durations are integer milliseconds.
 
-Environment-variable values are not fields anywhere in the schema. `restored_names` contains variable names or redacted normalized `PATH` entries. Captured output is a bounded, redacted summary and carries an `output_truncated` flag.
+`run_id` is a canonical 26-character ULID and a portable single path component. Repository and workspace fingerprints are opaque, version-dependent integrity evidence intended for before/after comparison within the same run; do not compare values across AssumeZero versions. `git_status_before` and `git_status_after` may contain legacy porcelain text from older v1 reports or a `sha256:` digest from hardened builds; new reports persist only the digest so repository path names do not re-enter evidence.
+
+Environment-variable values are not fields anywhere in the schema. Recognized or configured sensitive CLI option values are replaced before the `command` field is constructed. `restored_names` contains variable names or redacted normalized `PATH` entries. Captured output and Oracle details are bounded where applicable and redacted before Report construction; captured output carries an `output_truncated` flag.
 
 Consumers must:
 

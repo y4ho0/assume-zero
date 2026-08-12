@@ -118,7 +118,7 @@ pub struct Report {
     pub workspace_integrity: IntegrityEvidence,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ExecutionRequest {
     pub executable: PathBuf,
     pub args: Vec<String>,
@@ -127,10 +127,8 @@ pub struct ExecutionRequest {
     pub clear_env: bool,
     pub timeout_seconds: u64,
     pub log_limit_bytes: usize,
-    pub verbose: bool,
 }
 
-#[derive(Debug)]
 pub struct RawExecution {
     pub exit_code: Option<i32>,
     pub duration_ms: u128,

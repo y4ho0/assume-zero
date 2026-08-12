@@ -10,6 +10,7 @@ confirm_failures = 2
 [workspace]
 mode = "working-tree"
 max_size_mib = 2048
+max_entries = 100000
 exclude = [".git", ".assumezero"]
 include_untracked = []
 
@@ -34,3 +35,4 @@ max_total_seconds = 1800
 [report]
 formats = ["terminal", "json", "markdown", "junit"]
 redact_home = true
+sensitive_options = []

@@ -1,7 +1,7 @@
 use crate::model::{ExecutionRequest, RawExecution};
 use crate::platform;
 use anyhow::{Context, Result};
-use std::io::{self, Read, Write};
+use std::io::Read;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
@@ -20,7 +20,6 @@ fn install_interrupt_handler() {
     });
 }
 
-#[derive(Debug)]
 struct BoundedLog {
     head: Vec<u8>,
     tail: Vec<u8>,
@@ -73,27 +72,15 @@ impl BoundedLog {
 fn capture<R: Read + Send + 'static>(
     mut reader: R,
     limit: usize,
-    verbose: bool,
-    stderr: bool,
 ) -> thread::JoinHandle<(Vec<u8>, bool)> {
     thread::spawn(move || {
         let mut bounded = BoundedLog::new(limit);
         let mut buffer = [0_u8; 8_192];
-        let mut streamed = 0_usize;
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(count) => {
                     bounded.push(&buffer[..count]);
-                    if verbose && streamed < limit {
-                        let allowed = (limit - streamed).min(count);
-                        if stderr {
-                            let _ = io::stderr().write_all(&buffer[..allowed]);
-                        } else {
-                            let _ = io::stdout().write_all(&buffer[..allowed]);
-                        }
-                        streamed += allowed;
-                    }
                 }
                 Err(_) => break,
             }
@@ -133,8 +120,8 @@ pub fn execute(request: &ExecutionRequest) -> Result<RawExecution> {
         .stderr
         .take()
         .context("stderr capture was unavailable")?;
-    let stdout_thread = capture(stdout, request.log_limit_bytes, request.verbose, false);
-    let stderr_thread = capture(stderr, request.log_limit_bytes, request.verbose, true);
+    let stdout_thread = capture(stdout, request.log_limit_bytes);
+    let stderr_thread = capture(stderr, request.log_limit_bytes);
 
     let timeout = Duration::from_secs(request.timeout_seconds);
     let mut timed_out = false;

@@ -32,3 +32,23 @@ npx --yes ajv-cli@5.0.0 validate \
   --spec=draft2020 \
   -s "$repository_root/schemas/report-v1.schema.json" \
   -d "$repository_root/docs/demo/report-v1.example.json"
+
+python3 - "$repository_root/docs/demo/report-v1.example.json" "$validation_root/invalid-report.json" <<'PY'
+import json
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2])
+report = json.loads(source.read_text(encoding="utf-8"))
+report["run_id"] = "Z0000000000000000000000000"
+destination.write_text(json.dumps(report), encoding="utf-8")
+PY
+
+if npx --yes ajv-cli@5.0.0 validate \
+  --spec=draft2020 \
+  -s "$repository_root/schemas/report-v1.schema.json" \
+  -d "$validation_root/invalid-report.json" >/dev/null 2>&1; then
+  echo "invalid overflow ULID unexpectedly passed report schema" >&2
+  exit 1
+fi

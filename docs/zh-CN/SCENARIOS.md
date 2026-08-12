@@ -9,9 +9,9 @@
 - `AZ-S001 EMPTY_HOME`：把适用的主目录、Profile、配置和数据变量重定向到空目录。它不会列出或复制真实主目录。v0.1.0 不跟踪具体缺失文件。
 - `AZ-S002 EMPTY_CACHE`：重定向 `XDG_CACHE_HOME`、`npm_config_cache`、`PIP_CACHE_DIR`、`UV_CACHE_DIR` 和 `GRADLE_USER_HOME`。它不会删除真实缓存，也不会猜测 Maven 缓存参数。
 - `AZ-S003 CLEAN_ENV`：保留平台必需变量和 `[environment].preserve`。稳定失败、完整恢复和完成的 `ddmin` 可以产生 `PROVEN` 变量名集合。
-- `AZ-S005 SPACE_WORKDIR`：复制到 `AssumeZero Test Workspace/project copy`。
+- `AZ-S005 SPACE_WORKDIR`：复制到单组件工作区名称 `AssumeZero Test Workspace project copy`。
 - `AZ-S006 UNICODE_WORKDIR`：复制到 `项目-测试-Δ`；如果无法创建或使用该路径，则返回 `SKIPPED_UNSUPPORTED`。
-- `AZ-S007 DEEP_WORKDIR`：使用可配置、安全有界的目标长度，不会故意超过已记录的操作系统限制。
+- `AZ-S007 DEEP_WORKDIR`：使用可配置、安全有界的长工作区名称组件；该值最多为 240 个 ASCII 字节，不会故意超过常见文件系统的单组件限制。
 - `AZ-S008 REDIRECTED_TEMP`：把 `TMP`、`TEMP` 和 `TMPDIR` 重定向到场景专属目录。
 
 ## Deep
